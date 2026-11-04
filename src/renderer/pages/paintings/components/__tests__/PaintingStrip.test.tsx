@@ -44,6 +44,24 @@ describe('PaintingStrip', () => {
     expect(screen.getByTestId('painting-skeleton-surface')).toBeInTheDocument()
   })
 
+  it('selects each output independently so the second image can start its own branch', async () => {
+    const user = userEvent.setup()
+    const onSelect = vi.fn()
+    const multi = { ...painting, files: [{ id: 'first' }, { id: 'second' }] as PaintingData['files'] }
+    render(
+      <PaintingStrip
+        items={[multi]}
+        hasMore={false}
+        loadMore={vi.fn()}
+        onDeletePainting={vi.fn()}
+        onSelectPainting={onSelect}
+        onAddPainting={vi.fn()}
+      />
+    )
+    await user.click(screen.getAllByRole('button', { name: 'paintings.button.select.image' })[1])
+    expect(onSelect).toHaveBeenCalledWith(multi, 'second')
+  })
+
   it('moves a painting to the Recycle Bin without opening a confirmation', async () => {
     const user = userEvent.setup()
     const onDeletePainting = vi.fn().mockResolvedValue(undefined)

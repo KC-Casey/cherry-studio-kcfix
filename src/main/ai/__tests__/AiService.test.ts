@@ -848,7 +848,16 @@ describe('AiService', () => {
       data: 'data:image/png;base64,abc123',
       cleanupPolicy: 'delete_when_unreferenced'
     })
-    expect(result).toEqual({ files: [fileEntry] })
+    expect(result).toEqual({
+      files: [fileEntry],
+      execution: {
+        mode: 'generate',
+        interface: 'ai-sdk:image',
+        adapter: 'test-provider',
+        requestedSize: '1024x1024',
+        requestedQuality: 'high'
+      }
+    })
   })
 
   it('honors an explicit retry override for direct image requests', async () => {
@@ -2879,7 +2888,10 @@ describe('AiService.generateImage — custom async transport (job path)', () => 
         source: { type: 'assistant', id: 'assistant-1', name: 'Image Assistant', icon: '🎨' }
       })
     )
-    expect(result).toEqual({ files: outputFiles })
+    expect(result).toEqual({
+      files: outputFiles,
+      execution: { mode: 'generate', interface: 'job:image', adapter: 'ppio' }
+    })
     // No FileManager ref holds the temp input copy — it must be classified
     // 'delete_when_unreferenced' so the cleanup pass reclaims it instead of
     // relying on an ad-hoc delete.

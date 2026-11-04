@@ -31,7 +31,8 @@ function getPaintingHydrationFingerprint(record: Painting): string {
     record.createdAt,
     record.files.input,
     record.files.output,
-    record.fileDataFingerprint
+    record.fileDataFingerprint,
+    record.editReceipt
   ])
 }
 

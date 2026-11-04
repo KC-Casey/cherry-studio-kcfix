@@ -19,6 +19,7 @@ const logger = loggerService.withContext('usePaintingComposerInputFiles')
 export type InputCapability = 'unknown' | 'accept' | 'reject'
 
 interface Params {
+  preserveInputs?: boolean
   paintingId: string
   inputFiles: FileEntry[]
   files: ComposerAttachment[]
@@ -87,7 +88,8 @@ export function usePaintingComposerInputFiles({
   files,
   setFiles,
   inputCapability,
-  providerId
+  providerId,
+  preserveInputs = false
 }: Params) {
   const { t } = useTranslation()
   const entryCacheRef = useRef(new Map<string, FileEntry>())
@@ -173,7 +175,7 @@ export function usePaintingComposerInputFiles({
     // so a load blip between two edit models never looks like a support drop.
     if (inputCapability !== 'unknown') lastCapabilityRef.current = inputCapability
 
-    if (!providerChanged && !droppedImageSupport) return
+    if (preserveInputs || (!providerChanged && !droppedImageSupport)) return
 
     // Bump first: a SEED still awaiting `getPhysicalPath` must lose the right to
     // write back, or it would undo this clear the moment it resolves.
@@ -181,7 +183,7 @@ export function usePaintingComposerInputFiles({
     entryCacheRef.current = new Map()
     unseededEntriesRef.current = []
     setFiles([])
-  }, [inputCapability, providerId, setFiles])
+  }, [inputCapability, preserveInputs, providerId, setFiles])
 
   // MATERIALIZE — at generate time. Promote the current composer attachments to
   // FileEntry[]; a cache hit (seeded, or promoted earlier this session) is reused,

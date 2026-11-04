@@ -27,6 +27,7 @@ export function paintingDataToCreateDto(painting: CreatePaintingData): CreatePai
     providerId: painting.providerId,
     modelId: typeof painting.model === 'string' && painting.model.trim() ? painting.model : undefined,
     prompt: painting.prompt,
+    ...(painting.editReceipt ? { editReceipt: painting.editReceipt } : {}),
     files: {
       output: getTopLevelFileIds(painting.files),
       input: getTopLevelFileIds(painting.inputFiles)

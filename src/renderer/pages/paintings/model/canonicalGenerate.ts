@@ -142,6 +142,9 @@ export async function canonicalGenerate<T extends PaintingData>(
     prompt,
     ...(options.mode && { mode: options.mode }),
     paramValues,
+    onExecution: (execution) => {
+      if (painting.editReceipt) painting.editReceipt = { ...painting.editReceipt, execution }
+    },
     ...(painting.requestTimeoutMs && { requestTimeoutMs: painting.requestTimeoutMs }),
     ...(inputImages && { inputImages })
   })

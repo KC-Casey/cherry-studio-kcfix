@@ -14,18 +14,14 @@ import {
   useState
 } from 'react'
 import { useTranslation } from 'react-i18next'
-import useSWR from 'swr'
 
 import { Button, Popover, PopoverContent, PopoverTrigger } from '@cherrystudio/ui'
 import { usePersistCache } from '@data/hooks/useCache'
 import { usePreference } from '@data/hooks/usePreference'
 import useAvatar from '@renderer/hooks/useAvatar'
-import { useCherryAccountSession } from '@renderer/hooks/useCherryAccountSession'
 import { useSidebarShortcuts } from '@renderer/hooks/useSidebarShortcuts'
-import { ipcApi } from '@renderer/ipc'
 import { openSettingsTab } from '@renderer/services/mainWindowNavigation'
 import { toast } from '@renderer/services/toast'
-import { getAppEdition } from '@renderer/utils/appEdition'
 import { isMac } from '@renderer/utils/platform'
 
 import { CommandTooltip } from '../command'
@@ -73,13 +69,6 @@ export default function Sidebar({
   const { t } = useTranslation()
   const showUserInFooter = isMac && !isFullscreen
   const [userName] = usePreference('app.user.name')
-  const { status: accountStatus } = useCherryAccountSession()
-  const accountId = accountStatus?.phase === 'signed-in' ? accountStatus.accountId : null
-  useSWR(
-    getAppEdition() === 'global' && accountId ? ['cherry-cloud/account-plans', accountId] : null,
-    () => ipcApi.request('cherry_cloud.account_plans.get'),
-    { shouldRetryOnError: false }
-  )
   const { shortcuts, remove, reorder } = useSidebarShortcuts()
   const registry = useSidebarShortcutRegistry()
   const resolutions = useResolvedSidebarShortcuts(shortcuts, registry)

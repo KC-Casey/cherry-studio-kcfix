@@ -25,3 +25,10 @@ export function isManagedCherryAiDefaultModel(providerId: string, modelId: strin
 export function isManagedCherryCloudModel(providerId: string): boolean {
   return providerId === CHERRY_CLOUD_PROVIDER_ID
 }
+
+/** Cherry-owned hosted services are not available in this private fork. */
+export function isCherryOwnedProviderId(providerId: string): boolean {
+  return isManagedCherryProviderId(providerId) || providerId === 'cherryin'
+}
+
+export const CHERRY_HOSTED_SERVICES_ENABLED = false

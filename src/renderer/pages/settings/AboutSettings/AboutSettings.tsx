@@ -1,22 +1,10 @@
 import { useLocation, useNavigate, useSearch } from '@tanstack/react-router'
-import { debounce } from 'es-toolkit/compat'
-import { BadgeQuestionMark, Bug, Building2, Github, Globe, MessageSquareText, Rss, Star } from 'lucide-react'
+import { BadgeQuestionMark, Bug, Github, Globe, MessageSquareText, Star } from 'lucide-react'
 import type { FC, ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import {
-  Badge,
-  Button,
-  CircularProgress,
-  Divider,
-  IndicatorLight,
-  ScrollArea,
-  SegmentedControl,
-  Switch,
-  Tooltip
-} from '@cherrystudio/ui'
-import { usePreference } from '@data/hooks/usePreference'
+import { Badge, Button, Divider } from '@cherrystudio/ui'
 import AppLogo from '@renderer/assets/images/logo.png'
 import { DoctorPopup } from '@renderer/components/doctor'
 import FeedbackDialog from '@renderer/components/feedback/FeedbackDialog'
@@ -27,36 +15,22 @@ import {
   SettingRowTitle,
   SettingsContentColumn
 } from '@renderer/components/SettingsPrimitives'
-import UpdateDialogPopup from '@renderer/components/UpdateDialogPopup'
-import { UpgradeReleaseNotes } from '@renderer/components/UpgradeReleaseNotes'
-import { useAppUpdateState } from '@renderer/hooks/useAppUpdateState'
-import { useOpenReleaseNotes } from '@renderer/hooks/useOpenReleaseNotes'
 import { useTheme } from '@renderer/hooks/useTheme'
 import i18n from '@renderer/i18n/resolver'
 import { ipcApi } from '@renderer/ipc'
-import { toast } from '@renderer/services/toast'
 import { openExternalWebsite } from '@renderer/services/website'
-import { cn } from '@renderer/utils/style'
-import { UpgradeChannel } from '@shared/data/preference/preferenceTypes'
+import { APP_NAME } from '@shared/utils/constants'
 import { DOCTOR_OPEN_QUERY_PARAM, type DoctorPanel } from '@shared/utils/doctor'
 
 const AboutSettings: FC = () => {
-  const [autoCheckUpdate, setAutoCheckUpdate] = usePreference('app.dist.auto_update.enabled')
-  const [testPlan, setTestPlan] = usePreference('app.dist.test_plan.enabled')
-  const [testChannel, setTestChannel] = usePreference('app.dist.test_plan.channel')
-
   const [version, setVersion] = useState('')
-  const [isPortable, setIsPortable] = useState(false)
   const [feedbackOpen, setFeedbackOpen] = useState(false)
   const { t } = useTranslation()
   const { theme } = useTheme()
-  const showReleases = useOpenReleaseNotes()
   const location = useLocation()
   const navigate = useNavigate()
   const search = useSearch({ strict: false }) as Partial<Record<typeof DOCTOR_OPEN_QUERY_PARAM, DoctorPanel>>
   const consumedDoctorPanelRef = useRef<DoctorPanel | undefined>(undefined)
-
-  const { appUpdateState, updateAppUpdateState } = useAppUpdateState()
 
   useEffect(() => {
     const initialPanel = search[DOCTOR_OPEN_QUERY_PARAM]
@@ -79,32 +53,6 @@ const AboutSettings: FC = () => {
     void DoctorPopup.show({ initialPanel })
   }, [location.pathname, navigate, search])
 
-  const onCheckUpdate = debounce(
-    async () => {
-      if (appUpdateState.checking || appUpdateState.downloading) {
-        return
-      }
-
-      if (appUpdateState.downloaded) {
-        void UpdateDialogPopup.show({ releaseInfo: appUpdateState.info || null })
-        return
-      }
-
-      updateAppUpdateState({ checking: true, manualCheck: true })
-
-      try {
-        await ipcApi.request('app.updater.check_for_update')
-      } catch {
-        updateAppUpdateState({ manualCheck: false })
-        toast.error(t('settings.about.updateError'))
-      }
-
-      updateAppUpdateState({ checking: false })
-    },
-    2000,
-    { leading: true, trailing: false }
-  )
-
   const onOpenWebsite = (url: string) => {
     void openExternalWebsite(url)
   }
@@ -113,74 +61,10 @@ const AboutSettings: FC = () => {
     await ipcApi.request('system.toggle_dev_tools')
   }
 
-  const showEnterprise = async () => {
-    onOpenWebsite('https://enterprise.cherry-ai.com')
-  }
-
-  const currentChannelByVersion =
-    [
-      { pattern: `-${UpgradeChannel.BETA}.`, channel: UpgradeChannel.BETA },
-      { pattern: `-${UpgradeChannel.RC}.`, channel: UpgradeChannel.RC }
-    ].find(({ pattern }) => version.includes(pattern))?.channel || UpgradeChannel.LATEST
-
-  const handleTestChannelChange = async (value: UpgradeChannel) => {
-    if (testPlan && currentChannelByVersion !== UpgradeChannel.LATEST && value !== currentChannelByVersion) {
-      toast.warning(t('settings.general.test_plan.version_channel_not_match'))
-    }
-    void setTestChannel(value)
-    updateAppUpdateState({
-      available: false,
-      info: null,
-      downloaded: false,
-      checking: false,
-      downloading: false,
-      downloadProgress: 0
-    })
-  }
-
-  const getAvailableTestChannels = () => {
-    return [
-      {
-        tooltip: t('settings.general.test_plan.rc_version_tooltip'),
-        label: t('settings.general.test_plan.rc_version'),
-        value: UpgradeChannel.RC
-      },
-      {
-        tooltip: t('settings.general.test_plan.beta_version_tooltip'),
-        label: t('settings.general.test_plan.beta_version'),
-        value: UpgradeChannel.BETA
-      }
-    ]
-  }
-
-  const handleSetTestPlan = (value: boolean) => {
-    void setTestPlan(value)
-    updateAppUpdateState({
-      available: false,
-      info: null,
-      downloaded: false,
-      checking: false,
-      downloading: false,
-      downloadProgress: 0
-    })
-
-    if (value === true) {
-      void setTestChannel(getTestChannel())
-    }
-  }
-
-  const getTestChannel = () => {
-    if (testChannel === UpgradeChannel.LATEST) {
-      return UpgradeChannel.RC
-    }
-    return testChannel
-  }
-
   useEffect(() => {
     void (async () => {
       const appInfo = await ipcApi.request('app.get_info')
       setVersion(appInfo.version)
-      setIsPortable(appInfo.isPortable)
     })()
   }, [])
 
@@ -189,8 +73,6 @@ const AboutSettings: FC = () => {
     void openExternalWebsite(isChinese ? 'https://docs.cherry-ai.com/' : 'https://docs.cherry-ai.com/docs/en-us')
   }
 
-  const testChannels = getAvailableTestChannels()
-  const isUpdateReady = appUpdateState.available && appUpdateState.downloaded && !appUpdateState.downloading
   return (
     <SettingsContentColumn theme={theme}>
       <SettingGroup theme={theme}>
@@ -199,32 +81,20 @@ const AboutSettings: FC = () => {
             <button
               type="button"
               aria-label={t('settings.about.repository')}
-              onClick={() => onOpenWebsite('https://github.com/CherryHQ/cherry-studio')}
+              onClick={() => onOpenWebsite('https://github.com/KC-Casey/cherry-studio-kcfix')}
               className="relative cursor-pointer">
               <span aria-hidden="true">
-                {appUpdateState.downloading && appUpdateState.downloadProgress > 0 && (
-                  <div className="pointer-events-none absolute -top-0.5 -left-0.5">
-                    <CircularProgress
-                      value={appUpdateState.downloadProgress}
-                      size={76}
-                      strokeWidth={4}
-                      shape="square"
-                      className="stroke-transparent"
-                      progressClassName="stroke-[#67ad5b]"
-                    />
-                  </div>
-                )}
                 <LogoAvatar logo={AppLogo} size={72} className="rounded-full" alt="" />
               </span>
             </button>
 
             <div className="flex min-h-18 flex-col items-start justify-center">
-              <div className="mb-1 text-lg font-bold text-foreground">Cherry Studio</div>
+              <div className="mb-1 text-lg font-bold text-foreground">{APP_NAME}</div>
               <div className="text-muted-foreground text-sm">{t('settings.about.description')}</div>
               <button
                 type="button"
                 aria-label={t('settings.about.releases.title')}
-                onClick={() => onOpenWebsite('https://github.com/CherryHQ/cherry-studio/releases')}
+                onClick={() => onOpenWebsite('https://github.com/KC-Casey/cherry-studio-kcfix/releases')}
                 className="mt-1.5">
                 <Badge className="cursor-pointer rounded-md border-primary/20 bg-primary/10 px-1.5 py-0 text-[11px] leading-4 text-primary transition-colors hover:bg-primary/15">
                   v{version}
@@ -232,82 +102,8 @@ const AboutSettings: FC = () => {
               </button>
             </div>
           </div>
-
-          {!isPortable && (
-            <div className="flex shrink-0 items-center justify-end">
-              <Button
-                size="sm"
-                variant={isUpdateReady ? 'default' : 'outline'}
-                loading={appUpdateState.checking}
-                onClick={onCheckUpdate}
-                disabled={appUpdateState.downloading}
-                className={cn(
-                  'w-fit! min-w-0! shrink-0',
-                  isUpdateReady &&
-                    'bg-success text-primary-foreground hover:bg-success/90 dark:bg-success dark:text-primary-foreground dark:hover:bg-success/90'
-                )}>
-                {appUpdateState.downloading
-                  ? t('settings.about.downloading')
-                  : appUpdateState.available
-                    ? t('settings.about.checkUpdate.available')
-                    : t('settings.about.checkUpdate.label')}
-              </Button>
-            </div>
-          )}
         </div>
-
-        {!isPortable && (
-          <>
-            <Divider className="my-3" />
-            <SettingRow id="setting-about-auto-check-update" className="scroll-mt-6 gap-3">
-              <SettingRowTitle>{t('settings.general.auto_check_update.title')}</SettingRowTitle>
-              <Switch checked={autoCheckUpdate} onCheckedChange={(v) => setAutoCheckUpdate(v)} />
-            </SettingRow>
-
-            <Divider className="my-3" />
-            <SettingRow className="flex-nowrap gap-6">
-              <div className="flex min-w-0 flex-1 items-center justify-between gap-6">
-                <SettingRowTitle>{t('settings.general.test_plan.title')}</SettingRowTitle>
-                {testPlan && (
-                  <SegmentedControl<UpgradeChannel>
-                    value={getTestChannel()}
-                    onValueChange={handleTestChannelChange}
-                    options={testChannels.map((option) => ({
-                      value: option.value,
-                      label: (
-                        <Tooltip content={option.tooltip}>
-                          <span>{option.label}</span>
-                        </Tooltip>
-                      )
-                    }))}
-                    size="sm"
-                  />
-                )}
-              </div>
-              <Tooltip
-                content={t('settings.general.test_plan.tooltip')}
-                classNames={{ placeholder: 'inline-flex items-center' }}>
-                <Switch className="shrink-0" checked={testPlan} onCheckedChange={(v) => handleSetTestPlan(v)} />
-              </Tooltip>
-            </SettingRow>
-          </>
-        )}
       </SettingGroup>
-
-      {appUpdateState.info && appUpdateState.available && (
-        <SettingGroup theme={theme}>
-          <SettingRow className="gap-3">
-            <SettingRowTitle className="gap-2.5">
-              {t('settings.about.updateAvailable', { version: appUpdateState.info.version })}
-              <IndicatorLight color="var(--success)" />
-            </SettingRowTitle>
-          </SettingRow>
-          <Divider className="my-3" />
-          <ScrollArea viewportProps={{ className: 'overflow-x-hidden pr-2' }} className="max-h-96">
-            <UpgradeReleaseNotes releaseInfo={appUpdateState.info} />
-          </ScrollArea>
-        </SettingGroup>
-      )}
 
       <SettingGroup theme={theme}>
         <AboutActionRow
@@ -315,13 +111,6 @@ const AboutSettings: FC = () => {
           title={t('docs.title')}
           actionLabel={t('settings.about.website.button')}
           onAction={onOpenDocs}
-        />
-        <Divider className="my-3" />
-        <AboutActionRow
-          icon={<Rss className="size-4.5" />}
-          title={t('settings.about.releases.title')}
-          actionLabel={t('settings.about.releases.button')}
-          onAction={showReleases}
         />
         <Divider className="my-3" />
         <AboutActionRow
@@ -340,7 +129,7 @@ const AboutSettings: FC = () => {
               {t('settings.about.repository.button')}
             </>
           }
-          onAction={() => onOpenWebsite('https://github.com/CherryHQ/cherry-studio')}
+          onAction={() => onOpenWebsite('https://github.com/KC-Casey/cherry-studio-kcfix')}
         />
         <Divider className="my-3" />
         <AboutActionRow
@@ -348,13 +137,6 @@ const AboutSettings: FC = () => {
           title={t('settings.about.feedback.title')}
           actionLabel={t('settings.about.feedback.button')}
           onAction={() => setFeedbackOpen(true)}
-        />
-        <Divider className="my-3" />
-        <AboutActionRow
-          icon={<Building2 className="size-4.5" />}
-          title={t('settings.about.enterprise.title')}
-          actionLabel={t('settings.about.website.button')}
-          onAction={showEnterprise}
         />
         <Divider className="my-3" />
         <AboutActionRow

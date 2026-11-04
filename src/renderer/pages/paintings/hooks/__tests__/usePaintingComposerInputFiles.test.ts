@@ -309,6 +309,33 @@ describe('usePaintingComposerInputFiles', () => {
     expect(out.entries).toEqual([])
   })
 
+  it('retains the exact selected source when an edit branch switches providers', async () => {
+    const entry = makeEntry('parent-output')
+    const { result, rerender } = renderHook(
+      ({ providerId }) => {
+        const [files, setFiles] = useState<ComposerAttachment[]>([])
+        const { materializeInputs } = usePaintingComposerInputFiles({
+          paintingId: 'branch',
+          inputFiles: [entry],
+          files,
+          setFiles,
+          inputCapability: 'accept',
+          providerId,
+          preserveInputs: true
+        })
+        return { files, materializeInputs }
+      },
+      { initialProps: { providerId: 'openai' } }
+    )
+    await waitFor(() => expect(result.current.files).toHaveLength(1))
+    rerender({ providerId: 'gemini' })
+    let resolved: FileEntry[] = []
+    await act(async () => {
+      resolved = (await result.current.materializeInputs()).entries
+    })
+    expect(resolved.map((file) => file.id)).toEqual(['parent-output'])
+  })
+
   it('clears the draft when switching provider', async () => {
     const { result, rerender } = renderSwitchHarness({ inputCapability: 'accept', providerId: 'openai' })
     await attachChip(result)

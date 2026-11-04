@@ -73,6 +73,23 @@ describe('useProviders', () => {
     expect(result.current.isLoading).toBe(false)
   })
 
+  it('hides hosted Cherry providers without removing third-party entries or mutating persisted results', () => {
+    const stored = [
+      ...mockProviderList,
+      ...['cherryai', 'cherryai-subscription', 'cherryin'].map((id) => ({ ...mockProvider1, id }))
+    ]
+    mockUseQuery.mockReturnValue({
+      data: stored,
+      isLoading: false,
+      isRefreshing: false,
+      refetch: vi.fn(),
+      mutate: vi.fn()
+    })
+    const { result } = renderHook(() => useProviders())
+    expect(result.current.providers.map((provider) => provider.id)).toEqual(['openai', 'anthropic'])
+    expect(stored).toHaveLength(5)
+  })
+
   it('should return a stable empty array when data is undefined', () => {
     mockUseQuery.mockImplementation(() => ({
       data: undefined,

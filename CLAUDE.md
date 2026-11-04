@@ -56,11 +56,10 @@ Project-specific tools, paths, and conventions.
 - **Access paths centrally**: Use `application.getPath('namespace.key', filename?)` for all main-process filesystem paths—never call `app.getPath()`, `os.homedir()`, or construct paths ad-hoc. Import the singleton via `import { application } from '@application'`.
 - **Check what you changed, not the whole repo**: for local PR work, run only tests covering changed files and their affected consumers, with explicit test file paths (see Testing below). Use `pnpm check --plan` to inspect scope against the merge base with `origin/main`, including staged, unstaged, and untracked changes (`--base <ref>` for a stacked branch). The planner selects whole test projects and can fall back to the full gate; do not automatically execute `pnpm check` after inspecting it. Keep lint and formatting scoped to changed files; docs-only changes need documentation and changed-file formatting checks, no Vitest run.
 - **Inspect one explicit change scope**: before push, PR creation, review, and after a stack rewrite, run `pnpm change:scope --base <verified-ref>`; never guess the base or infer scope from the latest commit alone.
-- **Declare Agent Note or N/A**: every human-authored PR fills the Agent Note/Spec fields; automation-authored PRs (repository workflows and Dependabot) are exempt from this metadata requirement, not from normal validation. Substantial feature, architecture, process, and simplification work needs an approved proposed Spec before implementation; simple local bug fixes may use an explicit `N/A` reason. Follow [the Agent Note rules](.agents/notes/README.md).
+- **Private fork workflow**: this fork does not submit upstream PRs. Do not require a Spec PR, stacked PRs, GitHub review, or PR metadata for local work. Substantial work uses a local proposed Spec and explicit user approval; the approved local bilingual image-workbench Spec replaces the upstream Spec-PR workflow. Keep implementation evidence and relevant documentation current.
 - **Keep docs and code aligned**: run `pnpm docs:affected --base <verified-ref>` for code changes and inspect every candidate semantically. In-scope bilingual docs update English, Chinese, and sidecar together under [the pairing contract](docs/dev/i18n/README.md).
 - **Write conventional commits**: Commit small, focused changes using Conventional Commit messages (e.g., `feat(data-api):`, `fix(lifecycle):`, `refactor(quick-assistant):`, `docs(testing):`, `chore(deps):`, `test(window-manager):`). Scope must be a specific kebab-case module, never generic like `main` — when `git log` conflicts with this rule, this rule wins.
-- **Sign commits and sign off**: Every commit must be both cryptographically signed and DCO-signed off. Use `git commit -S --signoff` (not `--signoff` alone), verify the commit object contains a `gpgsig` header with `git cat-file commit HEAD`, and verify the pushed PR commits show `Verified` on GitHub.
-- **Target the right branch**: `main` is the default branch for all active development — submit features, refactors, optimizations, and fixes here.
+- **Publication**: do not push, open a PR, merge, or publish a release without explicit user authorization. This private fork does not submit PRs to the official repository.
 
 ## Development
 
@@ -100,7 +99,7 @@ New packages go in `devDependencies`; the main build bundles them. Put a package
 
 ### Pull Requests
 
-Use the `gh-create-pr` skill. Fallback: read `.agents/skills/gh-create-pr/SKILL.md` directly.
+PR creation is not required for this private fork. If the user separately requests a fork PR, use the `gh-create-pr` skill. Never create an upstream PR as an implicit development step.
 
 ### Code Review
 

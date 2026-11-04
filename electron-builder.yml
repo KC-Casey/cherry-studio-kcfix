@@ -1,5 +1,5 @@
 appId: com.kangfenmao.CherryStudio
-productName: Cherry Studio
+productName: cherry-studio-kcfix
 extraMetadata:
   cherryEdition: global
 electronLanguages:
@@ -107,7 +107,7 @@ extraResources:
   - from: "node_modules/pdfjs-dist/standard_fonts"
     to: "pdfjs/standard_fonts"
 win:
-  executableName: Cherry Studio
+  executableName: cherry-studio-kcfix
   artifactName: ${productName}-${version}-${arch}-setup.${ext}
   extraResources:
     # before-pack adds system-speech only for x64; extraResources .exe files use signtoolOptions below.
@@ -167,7 +167,7 @@ toolsets:
   appimage: "1.0.3"
 linux:
   artifactName: ${productName}-${version}-${arch}.${ext}
-  executableName: CherryStudio
+  executableName: cherry-studio-kcfix
   target:
     - target: AppImage
     - target: deb

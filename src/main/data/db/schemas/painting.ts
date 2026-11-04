@@ -1,5 +1,7 @@
 import { sqliteTable, text } from 'drizzle-orm/sqlite-core'
 
+import type { PaintingEditReceipt } from '@shared/data/types/painting'
+
 import { createUpdateDeleteTimestamps, orderKeyColumns, orderKeyIndex, uuidPrimaryKey } from './_columnHelpers'
 
 /**
@@ -8,10 +10,8 @@ import { createUpdateDeleteTimestamps, orderKeyColumns, orderKeyIndex, uuidPrima
  * Output and input files are NOT stored on the row. Each painting has zero or
  * more `painting_file_ref` rows with `sourceId=painting.id`,
  * `role='output'|'input'`. PaintingService writes those refs on create/update;
- * row deletion cascades refs at the database layer. The frozen receipt shape
- * avoids carrying mutable form state (mode, size, seed, etc.) on the row — the
- * live painting draft lives in renderer React state and is discarded on app
- * exit.
+ * row deletion cascades refs at the database layer. Optional editReceipt stores
+ * frozen lineage and execution metadata; mutable draft state stays in React.
  */
 export const paintingTable = sqliteTable(
   'painting',
@@ -20,6 +20,7 @@ export const paintingTable = sqliteTable(
     providerId: text('provider_id').notNull(),
     modelId: text('model_id'),
     prompt: text().notNull(),
+    editReceipt: text('edit_receipt', { mode: 'json' }).$type<PaintingEditReceipt>(),
     ...orderKeyColumns,
     ...createUpdateDeleteTimestamps
   },

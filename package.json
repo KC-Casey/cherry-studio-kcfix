@@ -1,9 +1,9 @@
 {
-  "name": "CherryStudio",
-  "version": "2.1.10",
+  "name": "cherry-studio-kcfix",
+  "version": "2.1.11-kcfix.1",
   "private": true,
   "description": "A powerful AI assistant for producer.",
-  "homepage": "https://github.com/CherryHQ/cherry-studio",
+  "homepage": "https://github.com/KC-Casey/cherry-studio-kcfix",
   "author": "support@cherry-ai.com",
   "main": "./out/main/main.js",
   "scripts": {
@@ -59,6 +59,7 @@
     "debug": "pnpm prepare:system-speech && pnpm rebuild:electron && pnpm download:binaries && pnpm run build:utility-process && dotenv -- electron-vite -- --inspect --sourcemap --remote-debugging-port=9222",
     "dev": "pnpm prepare:system-speech && pnpm rebuild:electron && pnpm download:binaries && pnpm run build:utility-process && dotenv electron-vite dev",
     "dev:cn": "dotenv -v CHERRY_EDITION=cn -- pnpm dev",
+    "dev:kcfix": "node scripts/dev-kcfix.mjs",
     "dev:watch": "pnpm prepare:system-speech && pnpm rebuild:electron && pnpm download:binaries && pnpm run build:utility-process && dotenv electron-vite dev -- -w",
     "docs:affected": "node scripts/docsGovernance/find-affected-docs.mjs",
     "docs:check": "pnpm docs:check-links && pnpm docs:check-structure && pnpm docs:check-frontmatter && pnpm docs:check-notes && pnpm docs:check-pairing && pnpm docs:check-terminology && pnpm docs:check-index",

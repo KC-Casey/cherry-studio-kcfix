@@ -47,6 +47,7 @@ import { type Assistant } from '@shared/data/types/assistant'
 import type { CleanupPolicy, FileEntry } from '@shared/data/types/file'
 import type { ImageGenerationMode, ListedModels } from '@shared/data/types/model'
 import { type Model, type UniqueModelId, parseUniqueModelId } from '@shared/data/types/model'
+import type { PaintingExecution } from '@shared/data/types/painting'
 import type { Provider } from '@shared/data/types/provider'
 import type { Base64String, CreateInternalEntryIpcParams, UrlString } from '@shared/types/file'
 import {
@@ -341,9 +342,26 @@ export interface AiImageRequest extends AiRequest {
   cleanupPolicy: CleanupPolicy
 }
 
+export function imageExecutionReceipt(
+  request: Pick<AiImageRequest, 'mode' | 'paramValues' | 'inputImages'>,
+  actualInterface: PaintingExecution['interface'],
+  adapter: string
+): PaintingExecution {
+  const size = request.paramValues.size
+  const quality = request.paramValues.quality
+  return {
+    mode: request.mode ?? (actualInterface === 'ai-sdk:image' && request.inputImages?.length ? 'edit' : 'generate'),
+    interface: actualInterface,
+    adapter,
+    ...(typeof size === 'string' && /^[a-zA-Z0-9_.:-]{1,64}$/.test(size) ? { requestedSize: size } : {}),
+    ...(typeof quality === 'string' && /^[a-zA-Z0-9_.:-]{1,64}$/.test(quality) ? { requestedQuality: quality } : {})
+  }
+}
+
 /** Image generation result — persisted file entries (main writes the bytes). */
 export interface AiImageResult {
   files: FileEntry[]
+  execution?: PaintingExecution
 }
 
 /**
@@ -1039,13 +1057,14 @@ export class AiService extends BaseService {
     // keep their native routing instead of dropping to the generic image path.
     const effectiveUniqueModelId = request.uniqueModelId ?? assistant?.modelId
     if (effectiveUniqueModelId && hasImageTransport(transportProviderId, model.apiModelId ?? model.id)) {
-      return await this.generateImageViaJob(
+      const result = await this.generateImageViaJob(
         { ...request, uniqueModelId: effectiveUniqueModelId, inputImages },
         structured,
         vendorBag,
         signal,
         source
       )
+      return { ...result, execution: imageExecutionReceipt(request, 'job:image', transportProviderId) }
     }
 
     const { sdkConfig, credentialReceipt } = await this.resolveTransportFor(request)
@@ -1139,7 +1158,7 @@ export class AiService extends BaseService {
         )
       )
 
-      return { files }
+      return { files, execution: imageExecutionReceipt(request, 'ai-sdk:image', sdkConfig.providerId) }
     })
   }
 

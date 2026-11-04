@@ -187,6 +187,16 @@ are committed when the model is selected by `computeModelFieldReset`
 
 ---
 
+## Persisted edit receipts
+
+The mutable `painting.params` form remains separate from the optional `editReceipt` on a persisted painting. New receipts retain the original prompt, current instruction, exact parent painting/output file IDs, and main-process execution metadata. Provider and model remain on the painting row; input/reference files use the existing `painting_file_ref` relationships. The original prompt is history only: edits send the current instruction and selected image inputs, never an implicit concatenation of the original prompt.
+
+`PaintingService.create` verifies that the parent file is an output of the named painting and is included in the new input files. Selecting an older output creates a new painting ID, so branches do not overwrite their source. Pending rows can receive their completed output and execution receipt; completed receipted rows reject changes to their content. Trash/restore retains its existing behavior.
+
+`AiService` supplies the selected execution channel (`ai-sdk:image` or `job:image`), adapter and operation mode. Requested size and quality are retained when present; effective values remain absent unless actually known. This is an adapter/channel receipt, not a captured HTTP endpoint. Receipt schemas reject opaque provider objects and unexpected credential fields. No API keys, tokens, headers, raw request bodies or URLs are copied from provider configuration.
+
+The nullable `painting.edit_receipt` column is added by migration `0034_exotic_molecule_man.sql`; existing painting rows and file references remain unchanged. Legacy rows have no inferred ancestry or execution metadata. History hydration restores recorded mode/size/quality when available and keeps the existing generate-mode default for legacy rows.
+
 ## Write half — `paramValues` → vendor request
 
 ### 1. Validate + collapse to one IPC bag (`canonicalGenerate`)

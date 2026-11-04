@@ -14,6 +14,8 @@
  * from `painting_file_ref.sourceId`.
  */
 
+import { isDeepStrictEqual } from 'node:util'
+
 import type { SQL } from 'drizzle-orm'
 import { and, asc, eq, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm'
 
@@ -35,7 +37,7 @@ import type {
 } from '@shared/data/api/schemas/paintings'
 import { PAINTINGS_DEFAULT_LIMIT, PAINTINGS_MAX_LIMIT } from '@shared/data/api/schemas/paintings'
 import { createUniqueModelId, isUniqueModelId } from '@shared/data/types/model'
-import type { Painting, PaintingFiles } from '@shared/data/types/painting'
+import type { Painting, PaintingEditReceipt, PaintingFiles } from '@shared/data/types/painting'
 
 import { asStringKey, decodeListCursor, encodeCursor, keysetOrdering } from './utils/keysetCursor'
 import { applyMoves, insertWithOrderKey } from './utils/orderKey'
@@ -57,7 +59,12 @@ interface PaintingFileSnapshot {
  * `files` is intentionally NOT in this map: file membership is owned by
  * `painting_file_ref`, not the painting row. The update path handles it separately.
  */
-export const UPDATE_PAINTING_FIELD_MAP: Array<keyof UpdatePaintingDto> = ['providerId', 'modelId', 'prompt']
+export const UPDATE_PAINTING_FIELD_MAP: Array<keyof UpdatePaintingDto> = [
+  'providerId',
+  'modelId',
+  'prompt',
+  'editReceipt'
+]
 
 function rowToPainting(row: PaintingRow, files: PaintingFiles, fileDataFingerprint?: string): Painting {
   return {
@@ -65,6 +72,7 @@ function rowToPainting(row: PaintingRow, files: PaintingFiles, fileDataFingerpri
     providerId: row.providerId,
     modelId: row.modelId,
     prompt: row.prompt,
+    ...(row.editReceipt ? { editReceipt: row.editReceipt } : {}),
     files,
     ...(fileDataFingerprint ? { fileDataFingerprint } : {}),
     orderKey: row.orderKey,
@@ -227,6 +235,7 @@ class PaintingService {
     const row = withSqliteErrors(
       () =>
         dbService.withWriteTx((tx) => {
+          validatePaintingParent(tx, dto.id, dto.editReceipt, dto.files.input)
           const inserted = insertWithOrderKey(
             tx,
             paintingTable,
@@ -234,7 +243,8 @@ class PaintingService {
               id: dto.id,
               providerId: dto.providerId,
               modelId: normalizeModelId(dto.providerId, dto.modelId),
-              prompt: dto.prompt
+              prompt: dto.prompt,
+              editReceipt: dto.editReceipt
             },
             {
               pkColumn: paintingTable.id,
@@ -282,6 +292,29 @@ class PaintingService {
       throw DataApiErrorFactory.notFound('Painting', id)
     }
 
+    if (existing.editReceipt) {
+      const snapshot = loadFilesForPaintings([id]).get(id)
+      if (snapshot?.files.output.length) {
+        const current = rowToPainting(existing, snapshot.files)
+        const changed = Object.entries(dto).some(([key, value]) => {
+          if (value === undefined) return false
+          if (key === 'modelId')
+            return normalizeModelId(dto.providerId ?? existing.providerId, dto.modelId) !== existing.modelId
+          if (key === 'files' && dto.files) {
+            return (
+              !isDeepStrictEqual([...dto.files.output].sort(), [...current.files.output].sort()) ||
+              !isDeepStrictEqual([...dto.files.input].sort(), [...current.files.input].sort())
+            )
+          }
+          return !isDeepStrictEqual(value, current[key as keyof Painting])
+        })
+        if (changed)
+          throw DataApiErrorFactory.validation({
+            editReceipt: ['Completed edit receipts are immutable; create a new branch']
+          })
+        return current
+      }
+    }
     const updates: Partial<InsertPaintingRow> = {}
     for (const key of UPDATE_PAINTING_FIELD_MAP) {
       if (dto[key] !== undefined) {
@@ -306,6 +339,15 @@ class PaintingService {
     const row = withSqliteErrors(
       () =>
         dbService.withWriteTx((tx) => {
+          const inputIds =
+            dto.files?.input ??
+            tx
+              .select({ fileEntryId: paintingFileRefTable.fileEntryId })
+              .from(paintingFileRefTable)
+              .where(and(eq(paintingFileRefTable.sourceId, id), eq(paintingFileRefTable.role, 'input')))
+              .all()
+              .map((ref) => ref.fileEntryId)
+          validatePaintingParent(tx, id, dto.editReceipt ?? existing.editReceipt, inputIds)
           let target = existing
           if (Object.keys(updates).length > 0) {
             const [updated] = tx.update(paintingTable).set(updates).where(eq(paintingTable.id, id)).returning().all()
@@ -483,6 +525,35 @@ class PaintingService {
       logger.info('Reordered paintings', {
         count: moves.length
       })
+    })
+  }
+}
+
+function validatePaintingParent(
+  tx: Pick<DbType, 'select'>,
+  paintingId: string | undefined,
+  receipt: PaintingEditReceipt | null | undefined,
+  inputIds: string[]
+): void {
+  if (!receipt?.parentPaintingId && !receipt?.parentFileId) return
+  if (!receipt.parentPaintingId || !receipt.parentFileId || receipt.parentPaintingId === paintingId) {
+    throw DataApiErrorFactory.validation({ editReceipt: ['Parent must name a different painting and its output file'] })
+  }
+  const [parentOutput] = tx
+    .select()
+    .from(paintingFileRefTable)
+    .where(
+      and(
+        eq(paintingFileRefTable.sourceId, receipt.parentPaintingId),
+        eq(paintingFileRefTable.fileEntryId, receipt.parentFileId),
+        eq(paintingFileRefTable.role, 'output')
+      )
+    )
+    .limit(1)
+    .all()
+  if (!parentOutput || !inputIds.includes(receipt.parentFileId)) {
+    throw DataApiErrorFactory.validation({
+      editReceipt: ['Parent must reference an existing output included in the edit inputs']
     })
   }
 }

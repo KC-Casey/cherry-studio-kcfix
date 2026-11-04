@@ -55,7 +55,7 @@ export function usePaintingList({
 
   const saveCurrent = useCallback(async () => {
     const current = paintingRef.current
-    if (!current.persistedAt) {
+    if (!current.persistedAt || current.files.length > 0) {
       return true
     }
 
@@ -128,14 +128,14 @@ export function usePaintingList({
             logger.warn('Failed to refresh paintings after stale deletion', refreshError as Error)
           }
           toast.info(t('recycle_bin.already_moved'))
-          return
+          return true
         }
         // A rejected DELETE (SQLITE_BUSY / FK / IPC) must surface like the
         // sibling write paths — otherwise the row silently reappears on the
         // next refresh with no toast or log.
         logger.error('Failed to delete painting', error as Error)
         presentPaintingGenerateError(error)
-        return
+        return false
       }
       if (target.id === paintingRef.current.id) {
         selectNextAfterDelete(target.id)
@@ -172,6 +172,7 @@ export function usePaintingList({
           }
         }
       })
+      return true
     },
     [cancelGeneration, deletePainting, refresh, restorePainting, selectNextAfterDelete, t]
   )

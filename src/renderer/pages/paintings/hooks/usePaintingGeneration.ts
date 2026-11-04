@@ -67,7 +67,15 @@ export function usePaintingGeneration({ painting, onPaintingChange }: UsePaintin
       // and passed in here; inject them so the pre-generate persist
       // (painting_file_ref role='input') and the pipeline's byte read both see the
       // current draft inputs — nothing was persisted for them during the draft window.
-      const base: PaintingData = { ...painting, inputFiles }
+      const base: PaintingData = {
+        ...painting,
+        inputFiles,
+        editReceipt: {
+          ...painting.editReceipt,
+          originalPrompt: painting.editReceipt?.originalPrompt ?? painting.prompt,
+          instruction: painting.prompt
+        }
+      }
       const shouldCreate = hasOutput(base) || !base.persistedAt
       const targetPainting: PaintingData = shouldCreate
         ? { ...base, id: uuid(), files: hasOutput(base) ? [] : base.files }
@@ -116,6 +124,7 @@ export function usePaintingGeneration({ painting, onPaintingChange }: UsePaintin
           abortController: controller
         })
         await updatePainting(targetPainting.id, {
+          editReceipt: targetPainting.editReceipt,
           files: {
             output: generatedFiles.map((file) => file.id),
             input: targetPainting.inputFiles?.map((entry) => entry.id) ?? []

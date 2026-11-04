@@ -238,6 +238,13 @@
       "when": 1793743411274,
       "tag": "0033_child_context_projection",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "6",
+      "when": 1793820498538,
+      "tag": "0034_exotic_molecule_man",
+      "breakpoints": true
     }
   ],
   "version": "7"

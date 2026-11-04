@@ -1,0 +1,5 @@
+# Bilingual-pair consistency record (docs/dev/i18n/README.md).
+# After editing either side, update its counterpart and re-record with:
+#   pnpm docs:check-pairing --write .agents/notes/proposed/feature/2026-11-04-kc-image-workbench.md
+2026-11-04-kc-image-workbench.md: 28e255e97d33fe83b329bf64a098eeb3b12dd232
+2026-11-04-kc-image-workbench.zh.md: f46ced92f2ccfa0dcd958253a9f789fce6e2e5a3

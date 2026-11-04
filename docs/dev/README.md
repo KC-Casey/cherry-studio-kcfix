@@ -7,7 +7,7 @@
 | Document | Description |
 |----------|-------------|
 | [Contributing](../../CONTRIBUTING.md) | How to contribute code |
-| [App Update Architecture](./contrib/app-upgrade.md) | How clients check for updates through the managed release service, with channels and the release history feed |
+| [App Update Architecture](./contrib/app-upgrade.md) | Private-fork update protection and historical upstream managed-release architecture |
 | [🌿 Branching Strategy](./contrib/branching-strategy.md) | Branch model for contributions, pull request guidelines, and version tag management targeting main |
 | [🖥️ Develop](./contrib/development.md) | Developer environment setup covering IDE configuration, Windows symlink support, and project install steps |
 | [Feishu Notification Script](./contrib/feishu-notify.md) | CLI script that sends Feishu webhook card notifications from GitHub Actions workflows, with command reference |

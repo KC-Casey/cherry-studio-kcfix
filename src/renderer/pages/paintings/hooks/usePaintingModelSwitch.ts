@@ -55,7 +55,7 @@ export function usePaintingModelSwitch({
         onPaintingChange({
           params: { ...painting.params, ...resetPatch },
           model: modelId,
-          ...(keepInputFiles ? {} : { inputFiles: [] })
+          ...(keepInputFiles || painting.editReceipt?.parentFileId ? {} : { inputFiles: [] })
         })
         return
       }
@@ -77,11 +77,11 @@ export function usePaintingModelSwitch({
         files: painting.files,
         prompt: painting.prompt,
         providerId,
-        mode: 'generate',
+        mode: painting.editReceipt?.parentFileId ? 'edit' : 'generate',
         model: modelId,
         // Switching providers resets the form context; never carry input
         // images across to a different provider's model.
-        inputFiles: []
+        inputFiles: painting.editReceipt?.parentFileId ? painting.inputFiles : []
       })
     },
     [currentProviderId, ensureProviderCatalog, models, onPaintingChange, painting]

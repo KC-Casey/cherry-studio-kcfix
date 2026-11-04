@@ -4,6 +4,10 @@ English | [中文](README.zh.md)
 
 An Agent Note records a decision a maintainer may reasonably revisit: the problem, the chosen behavior, what alternatives lost, the accepted cost, and the evidence that makes the result complete. It is repository rationale, not authority over current code.
 
+## Private fork workflow
+
+For cherry-studio-kcfix, local proposed Specs and explicit user approval replace the Spec-PR and stacked-PR approval requirements below. This fork does not submit PRs to the official repository. Keep bilingual records and verification evidence; pushing, merging or publishing still requires separate authorization. The PR-specific sections below are retained as upstream reference only.
+
 ## Layout and classification
 
 Notes live at `{lifecycle}/{class}/yyyy-mm-dd-topic.md`.

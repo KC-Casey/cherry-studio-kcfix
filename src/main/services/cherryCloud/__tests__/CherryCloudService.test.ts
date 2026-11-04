@@ -2,7 +2,16 @@ import { createHmac } from 'node:crypto'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type * as CherryPresets from '@shared/data/presets/cherryai'
 import type { Model } from '@shared/data/types/model'
+
+const hostedServices = vi.hoisted(() => ({ enabled: true }))
+vi.mock('@shared/data/presets/cherryai', async (importOriginal) => ({
+  ...(await importOriginal<typeof CherryPresets>()),
+  get CHERRY_HOSTED_SERVICES_ENABLED() {
+    return hostedServices.enabled
+  }
+}))
 
 const mocks = vi.hoisted(() => ({
   appEdition: 'global' as 'cn' | 'global',
@@ -318,6 +327,7 @@ async function createSignedInService(): Promise<CherryCloudService> {
 
 describe('CherryCloudService', () => {
   beforeEach(() => {
+    hostedServices.enabled = true
     vi.stubEnv('MAIN_VITE_CHERRY_CLOUD_CLIENT_SECRET', 'cloud-login-test-secret')
     vi.stubEnv('MAIN_VITE_CHERRY_CLOUD_API_ORIGIN', '')
     CherryCloudService.resetInstances()
@@ -338,6 +348,22 @@ describe('CherryCloudService', () => {
 
   afterEach(() => {
     vi.unstubAllEnvs()
+  })
+
+  it('does not restore sessions or send account traffic in the private fork', async () => {
+    hostedServices.enabled = false
+    const service = await createService()
+    await expect(service.startLogin()).rejects.toThrow('unavailable')
+    await expect(service.authenticatedFetch('/v1/messages')).rejects.toThrow('unavailable')
+    expect(await service.syncEntitledModelsIfStale()).toEqual({
+      entitledModelIds: [],
+      freeModelIds: [],
+      availableModelIds: { agent: [], general: [] },
+      quotaExhaustedModelIds: []
+    })
+    expect(mocks.netFetch).not.toHaveBeenCalled()
+    expect(mocks.openExternal).not.toHaveBeenCalled()
+    expect(mocks.loopbackOpen).not.toHaveBeenCalled()
   })
 
   it('authenticates both login requests with the cloud secret and their transmitted bodies', async () => {

@@ -9,7 +9,11 @@ import { loggerService } from '@logger'
 import { SignatureClient } from '@main/ai/provider/cherryai'
 import { BaseService, Injectable, Phase, ServicePhase } from '@main/core/lifecycle'
 import { getAppEdition } from '@main/utils/appEdition'
-import { CHERRY_CLOUD_MODEL_GROUP, CHERRY_CLOUD_PROVIDER_ID } from '@shared/data/presets/cherryai'
+import {
+  CHERRY_CLOUD_MODEL_GROUP,
+  CHERRY_CLOUD_PROVIDER_ID,
+  CHERRY_HOSTED_SERVICES_ENABLED
+} from '@shared/data/presets/cherryai'
 import {
   createUniqueModelId,
   type EndpointType,
@@ -172,6 +176,7 @@ export class CherryCloudService extends BaseService {
   } | null = null
 
   protected async onInit(): Promise<void> {
+    if (!CHERRY_HOSTED_SERVICES_ENABLED) return
     this.lifecycleGeneration += 1
     this.registerDisposable(() => {
       this.authorizationOperation?.controller.abort()
@@ -212,6 +217,7 @@ export class CherryCloudService extends BaseService {
   }
 
   public async startLogin(): Promise<CherryCloudStatus> {
+    if (!CHERRY_HOSTED_SERVICES_ENABLED) throw new CherryCloudLoginUnavailableError()
     if (this.loginPromise) return this.loginPromise
     if (this.authorizationOperation) return this.getStatus()
 
@@ -600,6 +606,13 @@ export class CherryCloudService extends BaseService {
   }
 
   public async syncEntitledModelsIfStale(): Promise<CherryCloudModelSyncResult> {
+    if (!CHERRY_HOSTED_SERVICES_ENABLED)
+      return {
+        entitledModelIds: [],
+        freeModelIds: [],
+        availableModelIds: { agent: [], general: [] },
+        quotaExhaustedModelIds: []
+      }
     await this.pruneExpiredState()
     const cached = this.modelSyncCache
     if (cached?.generation === this.sessionGeneration && Date.now() - cached.syncedAt < CLOUD_MODEL_SYNC_CACHE_TTL_MS) {
@@ -800,6 +813,7 @@ export class CherryCloudService extends BaseService {
   }
 
   public async authenticatedFetch(path: string, init?: CherryCloudRequestInit): Promise<Response> {
+    if (!CHERRY_HOSTED_SERVICES_ENABLED) throw new CherryCloudLoginUnavailableError()
     init?.signal?.throwIfAborted()
     const initialSession = this.cloudState.session
     let session: ProductSession

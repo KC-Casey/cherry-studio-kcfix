@@ -8,6 +8,7 @@ export function paintingDataToUpdateDto(painting: PaintingData): UpdatePaintingD
     providerId: painting.providerId,
     modelId: typeof painting.model === 'string' && painting.model.trim() ? painting.model : undefined,
     prompt: painting.prompt,
+    ...(painting.editReceipt ? { editReceipt: painting.editReceipt } : {}),
     files: {
       output: paintingFileIdsForPersistence(painting.files),
       input: paintingFileIdsForPersistence(painting.inputFiles)

@@ -14,13 +14,14 @@ import PaintingSkeletonSurface from './PaintingSkeletonSurface'
 
 interface PaintingStripProps {
   selectedPaintingId?: string
+  selectedFileId?: string
   /** Id of the painting with an in-flight generation, or undefined when idle. */
   runningPaintingId?: string
   items: PaintingStripEntry[]
   hasMore: boolean
   loadMore: () => void
   onDeletePainting: (painting: PaintingData) => void | Promise<void>
-  onSelectPainting: (painting: PaintingData) => void
+  onSelectPainting: (painting: PaintingData, fileId?: string) => void
   onAddPainting: () => void
   adding?: boolean
 }
@@ -86,6 +87,7 @@ const PaintingStripItem: FC<{
 
 const PaintingStrip: FC<PaintingStripProps> = ({
   selectedPaintingId,
+  selectedFileId,
   runningPaintingId,
   items,
   hasMore,
@@ -127,18 +129,28 @@ const PaintingStrip: FC<PaintingStripProps> = ({
             <Plus className="size-4" />
           </Button>
         </Tooltip>
-        {items.map((painting) => (
-          <PaintingStripItem
-            key={painting.id}
-            painting={painting}
-            selected={painting.id === selectedPaintingId}
-            loading={painting.id === runningPaintingId}
-            onDelete={(painting) => void onDeletePainting(painting)}
-            onSelect={onSelectPainting}
-            selectLabel={t('paintings.button.select.image')}
-            deleteLabel={t('paintings.button.delete.image.label')}
-          />
-        ))}
+        {items.flatMap((painting) =>
+          (painting.files.length ? painting.files : [undefined]).map((file) => (
+            <div key={`${painting.id}:${file?.id ?? 'pending'}`}>
+              <PaintingStripItem
+                painting={file ? { ...painting, files: [file] } : painting}
+                selected={painting.id === selectedPaintingId && (!selectedFileId || file?.id === selectedFileId)}
+                loading={painting.id === runningPaintingId}
+                onDelete={() => void onDeletePainting(painting)}
+                onSelect={() => onSelectPainting(painting, file?.id)}
+                selectLabel={t('paintings.button.select.image')}
+                deleteLabel={t('paintings.button.delete.image.label')}
+              />
+              {painting.editReceipt?.parentPaintingId && (
+                <span
+                  className="block truncate text-center text-xs text-muted-foreground"
+                  title={painting.editReceipt.parentPaintingId}>
+                  ↳
+                </span>
+              )}
+            </div>
+          ))
+        )}
         {hasMore && <Loader2 className="mx-auto size-4 shrink-0 animate-spin text-foreground-tertiary" aria-hidden />}
       </div>
 

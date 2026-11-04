@@ -55,12 +55,9 @@ async function resolveEntries(ids: string[]): Promise<FileEntry[]> {
 }
 
 /**
- * Hydrate a persisted painting record (frozen receipt: prompt + files) into
- * the renderer's PaintingData draft shape. The DB record carries no mode,
- * mediaType, or params — those are live form-state concerns. The draft built
- * here defaults `mode` to `'generate'` so callers that select a past painting
- * land on the generate tab; the form will overwrite this when the user picks
- * a different tab.
+ * Hydrate a persisted painting record and its optional edit receipt into
+ * the renderer's PaintingData draft shape. New receipts restore their recorded
+ * mode, size and quality; legacy rows retain the generate-mode default.
  */
 export async function recordToPaintingData(record: PaintingRecord): Promise<PaintingData> {
   const [outputEntries, inputFiles] = await Promise.all([
@@ -74,8 +71,19 @@ export async function recordToPaintingData(record: PaintingRecord): Promise<Pain
   return {
     id: record.id,
     providerId: record.providerId,
-    mode: 'generate',
+    mode: record.editReceipt?.execution?.mode ?? 'generate',
+    ...(record.editReceipt?.execution
+      ? {
+          params: {
+            ...(record.editReceipt.execution.requestedSize ? { size: record.editReceipt.execution.requestedSize } : {}),
+            ...(record.editReceipt.execution.requestedQuality
+              ? { quality: record.editReceipt.execution.requestedQuality }
+              : {})
+          }
+        }
+      : {}),
     prompt: record.prompt,
+    ...(record.editReceipt ? { editReceipt: record.editReceipt } : {}),
     files,
     inputFiles,
     persistedAt: record.createdAt,

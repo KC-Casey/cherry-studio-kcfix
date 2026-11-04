@@ -84,7 +84,7 @@ vi.mock('@renderer/components/icons/LogoAvatar', () => ({
 
 import { AboutSettings } from '..'
 
-const REPOSITORY_URL = 'https://github.com/CherryHQ/cherry-studio'
+const REPOSITORY_URL = 'https://github.com/KC-Casey/cherry-studio-kcfix'
 
 async function renderAboutSettings() {
   render(<AboutSettings />)
@@ -190,6 +190,9 @@ describe('AboutSettings repository entry', () => {
     const user = userEvent.setup()
     await renderAboutSettings()
 
+    expect(screen.getByText('cherry-studio-kcfix')).toBeVisible()
+    expect(screen.queryByText('settings.about.checkUpdate.label')).not.toBeInTheDocument()
+    expect(screen.queryByText('settings.general.auto_check_update.title')).not.toBeInTheDocument()
     expect(screen.getByText('Open-source project')).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Support' }))
 

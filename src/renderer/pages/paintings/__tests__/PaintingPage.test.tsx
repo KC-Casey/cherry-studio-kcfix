@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { mockDataApiService, MockDataApiUtils } from '@test-mocks/renderer/DataApiService'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { PaintingData } from '../model/types/paintingData'
@@ -31,39 +32,7 @@ vi.mock('@renderer/components/QuickPanel', () => ({
   QuickPanelProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>
 }))
 
-vi.mock('../hooks/usePaintingTemplateCatalog', () => ({
-  usePaintingTemplateCatalog: () => ({
-    templates: mocks.templates
-  })
-}))
-
-vi.mock('../components/Artboard', () => ({
-  default: () => <div data-testid="painting-artboard" />
-}))
-
-vi.mock('../components/PaintingTemplateShowcase', () => ({
-  default: ({
-    prompt,
-    templates,
-    onSelect
-  }: {
-    prompt: string
-    templates: readonly { id: string; imageUrl: string; label: string; prompt: string }[]
-    onSelect: (prompt: string) => void
-  }) => (
-    <div data-testid="painting-template-showcase" role="group" aria-label="paintings.showcase.styles_label">
-      {templates.map((template) => (
-        <button
-          key={template.id}
-          type="button"
-          aria-label={template.label}
-          aria-pressed={prompt === template.prompt}
-          onClick={() => onSelect(template.prompt)}
-        />
-      ))}
-    </div>
-  )
-}))
+vi.mock('../components/Artboard', () => ({ default: () => <div data-testid="painting-artboard" /> }))
 
 vi.mock('../components/PaintingComposer', () => ({
   default: ({
@@ -89,7 +58,23 @@ vi.mock('../components/PaintingComposer', () => ({
 }))
 
 vi.mock('../components/PaintingStrip', () => ({
-  default: () => <div data-testid="painting-strip" />
+  default: ({
+    items,
+    onSelectPainting
+  }: {
+    items: PaintingData[]
+    onSelectPainting: (painting: PaintingData, id: string) => void
+  }) => (
+    <div>
+      {items.flatMap((painting) =>
+        painting.files.map((file) => (
+          <button type="button" key={file.id} onClick={() => onSelectPainting(painting, file.id)}>
+            select {file.id}
+          </button>
+        ))
+      )}
+    </div>
+  )
 }))
 
 vi.mock('../hooks/usePaintingGenerationSubmit', () => ({
@@ -169,8 +154,9 @@ vi.mock('../model/utils/paintingGenerationParams', () => ({
 
 const { default: PaintingPage } = await import('../PaintingPage')
 
-describe('PaintingPage showcase', () => {
+describe('PaintingPage workbench', () => {
   beforeEach(() => {
+    MockDataApiUtils.resetMocks()
     mocks.cancel.mockReset()
     mocks.files = []
     mocks.generate.mockReset()
@@ -212,150 +198,55 @@ describe('PaintingPage showcase', () => {
     expect(screen.getByTestId('painting-composer')).toHaveAttribute('data-model-id', 'enabled-model')
   })
 
-  it('shows the template showcase only on the untouched blank page', () => {
-    render(<PaintingPage />)
-
-    expect(screen.getByRole('heading', { name: 'paintings.showcase.title' })).toBeInTheDocument()
-    expect(screen.getByTestId('painting-template-showcase')).toBeInTheDocument()
-    expect(screen.queryByTestId('painting-artboard')).not.toBeInTheDocument()
-    expect(
-      within(screen.getByRole('group', { name: 'paintings.showcase.styles_label' })).getAllByRole('button')
-    ).toHaveLength(25)
-    expect(screen.getByText('paintings.showcase.caption')).toBeInTheDocument()
-    expect(screen.getByTestId('painting-composer')).toBeInTheDocument()
-  })
-
-  it('removes the template showcase as soon as image generation starts', () => {
-    mocks.generating = true
-
-    render(<PaintingPage />)
-
-    expect(screen.queryByRole('heading', { name: 'paintings.showcase.title' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('group', { name: 'paintings.showcase.styles_label' })).not.toBeInTheDocument()
-    expect(screen.queryByText('paintings.showcase.caption')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('painting-template-showcase')).not.toBeInTheDocument()
-    expect(screen.getByTestId('painting-artboard')).toBeInTheDocument()
-  })
-
-  it('keeps persisted empty paintings on the normal artboard', () => {
-    mocks.persistedAt = '2026-01-01T00:00:00.000Z'
-
-    render(<PaintingPage />)
-
-    expect(screen.queryByTestId('painting-template-showcase')).not.toBeInTheDocument()
-    expect(screen.getByTestId('painting-artboard')).toBeInTheDocument()
-  })
-
-  it('shows the empty-page showcase while painting history is loading', () => {
-    mocks.historyIsLoading = true
-
-    render(<PaintingPage />)
-
-    expect(screen.getByTestId('painting-template-showcase')).toBeInTheDocument()
-    expect(screen.queryByTestId('painting-artboard')).not.toBeInTheDocument()
-  })
-
-  it('shows an explicit new blank draft after bootstrap even when history exists', () => {
+  it('keeps the original prompt record separate from the current edit instruction after selecting history', async () => {
     mocks.historyItems = [
       {
-        id: 'persisted-painting',
-        providerId: 'provider-1',
+        id: 'old-painting',
+        providerId: 'openai',
         mode: 'generate',
-        prompt: 'persisted prompt',
-        files: [],
-        persistedAt: '2026-01-01T00:00:00.000Z'
+        model: 'gpt-image-1',
+        prompt: 'A red house',
+        files: [{ id: 'output-2' }] as PaintingData['files']
       }
     ]
-
+    MockDataApiUtils.setCustomResponse('/files/entries/output-2', 'GET', { id: 'output-2' })
     render(<PaintingPage />)
-
-    expect(screen.getByTestId('painting-template-showcase')).toBeInTheDocument()
-    expect(screen.queryByTestId('painting-artboard')).not.toBeInTheDocument()
-  })
-
-  it('hides the showcase and disables send while submit validation is pending', () => {
-    mocks.submitting = true
-
-    render(<PaintingPage />)
-
-    expect(screen.queryByTestId('painting-template-showcase')).not.toBeInTheDocument()
-    expect(screen.getByTestId('painting-artboard')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'generate' })).toBeDisabled()
-  })
-
-  it('keeps the normal artboard placeholder while the template catalog is unavailable', () => {
-    mocks.templates = []
-
-    render(<PaintingPage />)
-
-    expect(screen.getByRole('heading', { name: 'paintings.showcase.title' })).toBeInTheDocument()
-    expect(screen.queryByTestId('painting-template-showcase')).not.toBeInTheDocument()
-    expect(screen.getByTestId('painting-artboard')).toBeInTheDocument()
-    expect(screen.getByText('paintings.showcase.caption')).toBeInTheDocument()
-  })
-
-  it('keeps the generated-image stage free of template showcase chrome', () => {
-    mocks.files = [{ id: 'generated-image' }]
-
-    render(<PaintingPage />)
-
-    expect(screen.queryByRole('heading', { name: 'paintings.showcase.title' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('group', { name: 'paintings.showcase.styles_label' })).not.toBeInTheDocument()
-    expect(screen.queryByText('paintings.showcase.caption')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('painting-template-showcase')).not.toBeInTheDocument()
-    expect(screen.getByTestId('painting-artboard')).toBeInTheDocument()
-  })
-
-  it('minimizes the prompt dock after images exist and restores it from the expand toggle', () => {
-    // Regression: long prompts permanently stole artboard space after generate (#20739).
-    mocks.files = [{ id: 'generated-image' }]
-
-    render(<PaintingPage />)
-
-    expect(screen.getByTestId('painting-prompt-dock-collapsed')).toBeInTheDocument()
-    expect(screen.queryByTestId('painting-composer')).not.toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: 'paintings.prompt_dock.expand' }))
-
-    expect(screen.getByTestId('painting-composer')).toBeInTheDocument()
-    const dock = screen.getByTestId('painting-prompt-dock')
-    // The sizing boundary must include the dock's padding and its collapse control.
-    expect(dock).toHaveAttribute('data-composer-dock-surface')
-    const stage = dock.closest('[data-composer-stage]')
-    expect(stage).toContainElement(screen.getByTestId('painting-artboard'))
-    expect(dock).toContainElement(screen.getByRole('button', { name: 'paintings.prompt_dock.minimize' }))
-    expect(screen.queryByTestId('painting-prompt-dock-collapsed')).not.toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: 'paintings.prompt_dock.minimize' }))
-
-    expect(screen.getByTestId('painting-prompt-dock-collapsed')).toBeInTheDocument()
-    expect(screen.queryByTestId('painting-composer')).not.toBeInTheDocument()
-  })
-
-  it('keeps the prompt dock expanded on a blank draft without generated images', () => {
-    render(<PaintingPage />)
-
-    expect(screen.getByTestId('painting-composer')).toBeInTheDocument()
-    expect(screen.queryByTestId('painting-prompt-dock-collapsed')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'paintings.prompt_dock.expand' })).not.toBeInTheDocument()
-  })
-
-  it('fills the prompt from a style choice without starting generation', () => {
-    render(<PaintingPage />)
-
-    const templateStage = screen.getByTestId('painting-template-stage')
-    expect(templateStage).toHaveClass('absolute', 'inset-0', 'z-0', 'pb-36')
-    expect(screen.getByTestId('painting-composer')).toHaveStyle({ height: '64px' })
-
-    const templateButton = screen.getByRole('button', {
-      name: 'Motion Step'
-    })
-    fireEvent.click(templateButton)
-
-    expect(screen.getByRole('textbox', { name: 'painting prompt' })).toHaveValue('Create a poster for ${CITY RHYTHM}')
-    expect(templateButton).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByTestId('painting-composer')).toHaveStyle({ height: '180px' })
-    expect(screen.getByTestId('painting-template-stage')).toBe(templateStage)
+    fireEvent.click(screen.getByRole('button', { name: 'select output-2' }))
+    await waitFor(() => expect(screen.getByText('A red house')).toBeInTheDocument())
+    expect(screen.getByRole('textbox', { name: 'painting prompt' })).toHaveValue('')
+    expect(screen.getByText('paintings.workbench.original_prompt')).toBeInTheDocument()
+    expect(screen.getByText('paintings.workbench.instruction')).toBeInTheDocument()
     expect(mocks.generate).not.toHaveBeenCalled()
+  })
+
+  it('shows an unavailable parent explicitly instead of silently omitting comparison', async () => {
+    mocks.historyItems = [
+      {
+        id: 'child',
+        providerId: 'openai',
+        mode: 'edit',
+        prompt: 'make it blue',
+        files: [{ id: 'child-output' }] as PaintingData['files'],
+        editReceipt: {
+          parentPaintingId: 'not-loaded',
+          parentFileId: 'missing-parent',
+          originalPrompt: 'A red house',
+          instruction: 'make it blue'
+        }
+      }
+    ]
+    mockDataApiService.get.mockImplementation(async (path) => {
+      if (path === '/files/entries/child-output') return { id: 'child-output' }
+      throw new Error('Parent file is unavailable')
+    })
+    render(<PaintingPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'select child-output' }))
+    await waitFor(() => expect(screen.getByText('paintings.workbench.parent_unavailable')).toBeInTheDocument())
+  })
+
+  it('keeps sending disabled while request preparation is pending', () => {
+    mocks.submitting = true
+    render(<PaintingPage />)
+    expect(screen.getByRole('button', { name: 'generate' })).toBeDisabled()
   })
 })

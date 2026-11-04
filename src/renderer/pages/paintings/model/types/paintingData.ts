@@ -1,6 +1,6 @@
 import type { FileMetadata } from '@renderer/types/file'
 import type { FileEntry } from '@shared/data/types/file'
-import type { PaintingMode } from '@shared/data/types/painting'
+import type { PaintingEditReceipt, PaintingMode } from '@shared/data/types/painting'
 
 export type PaintingGenerationStatus = 'running' | 'failed' | 'canceled'
 
@@ -16,9 +16,8 @@ export type PaintingGenerationStatus = 'running' | 'failed' | 'canceled'
  * carry wire-format quirks) the AI SDK adapter in
  * `aiCore/provider/custom/`.
  *
- * `mode` is a live form/draft concern only — the persisted painting record
- * (`Painting` in `@shared/data/types/painting`) does NOT carry mode.
- * `mediaType` is similarly not persisted; image vs video is derived from
+ * `mode` is live form state; completed editReceipt records its execution value.
+ * `mediaType` is not persisted; image vs video is derived from
  * `files` at display time when needed.
  *
  * `inputFiles` is v2-native `FileEntry[]` (the prompt-box attachment
@@ -33,6 +32,7 @@ export interface PaintingData {
   mode: PaintingMode
   model?: string
   prompt: string
+  editReceipt?: PaintingEditReceipt
   files: FileMetadata[]
   inputFiles?: FileEntry[]
   persistedAt?: string

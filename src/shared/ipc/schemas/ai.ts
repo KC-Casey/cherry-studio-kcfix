@@ -41,6 +41,7 @@ import {
   ServiceTierSelectionSchema,
   UniqueModelIdSchema
 } from '@shared/data/types/model'
+import { PaintingExecutionSchema, type PaintingExecution } from '@shared/data/types/painting'
 import { ReasoningEffortOptionSchema } from '@shared/types/aiSdk'
 import { AbsoluteFilePathSchema, FileVersionSchema } from '@shared/types/file'
 
@@ -180,7 +181,10 @@ const aiImagePayloadSchema = z.strictObject({
 })
 
 // Keep the public output named so declaration emit does not expose FileEntry's private path brand.
-const aiImageOutputSchema: z.ZodType<{ files: FileEntry[] }> = z.object({ files: z.array(FileEntrySchema) })
+const aiImageOutputSchema: z.ZodType<{ files: FileEntry[]; execution?: PaintingExecution }> = z.object({
+  files: z.array(FileEntrySchema),
+  execution: PaintingExecutionSchema.optional()
+})
 
 const aiStreamRegenerateShape = {
   trigger: z.literal('regenerate-message'),

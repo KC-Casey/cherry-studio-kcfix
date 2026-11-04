@@ -82,6 +82,148 @@ describe('PaintingService', () => {
       .orderBy(asc(paintingFileRefTable.role), asc(paintingFileRefTable.fileEntryId))
   }
 
+  it('persists separate branches from the same exact parent output without modifying the parent', async () => {
+    await seedFileEntry('parent-image')
+    await seedFileEntry('child-one')
+    await seedFileEntry('child-two')
+    const parent = paintingService.create(
+      p({ providerId: 'aihubmix', prompt: 'original', files: { input: [], output: ['parent-image'] } })
+    )
+    const receipt = {
+      parentPaintingId: parent.id,
+      parentFileId: 'parent-image',
+      originalPrompt: 'original',
+      instruction: 'make it blue'
+    }
+    const first = paintingService.create({
+      providerId: 'aihubmix',
+      prompt: 'make it blue',
+      files: { input: ['parent-image'], output: ['child-one'] },
+      editReceipt: receipt
+    })
+    const second = paintingService.create({
+      providerId: 'aihubmix',
+      prompt: 'make it red',
+      files: { input: ['parent-image'], output: ['child-two'] },
+      editReceipt: { ...receipt, instruction: 'make it red' }
+    })
+    expect(first.id).not.toBe(second.id)
+    expect(paintingService.getById(first.id).editReceipt).toEqual(receipt)
+    expect(paintingService.getById(second.id).editReceipt?.parentFileId).toBe('parent-image')
+    expect(paintingService.getById(parent.id)).toMatchObject({
+      prompt: 'original',
+      files: { input: [], output: ['parent-image'] }
+    })
+    expect(paintingService.getById(parent.id).editReceipt).toBeUndefined()
+  })
+
+  it('rejects a lineage pointer to a file that is not the parent output', async () => {
+    await seedFileEntry('unrelated')
+    const parent = paintingService.create(p({ providerId: 'aihubmix', prompt: 'original' }))
+    expect(() =>
+      paintingService.create({
+        providerId: 'aihubmix',
+        prompt: 'edit',
+        files: { input: ['unrelated'], output: [] },
+        editReceipt: {
+          parentPaintingId: parent.id,
+          parentFileId: 'unrelated',
+          originalPrompt: 'original',
+          instruction: 'edit'
+        }
+      })
+    ).toThrow()
+  })
+
+  it.each(['missing parent', 'wrong output', 'missing input', 'self parent'])(
+    'rejects a pending lineage update with %s and leaves its saved inputs unchanged',
+    async (invalid) => {
+      await seedFileEntry('parent-output')
+      await seedFileEntry('other-output')
+      const parent = paintingService.create(
+        p({ providerId: 'aihubmix', prompt: 'source', files: { input: [], output: ['parent-output'] } })
+      )
+      const receipt = {
+        parentPaintingId: parent.id,
+        parentFileId: 'parent-output',
+        originalPrompt: 'source',
+        instruction: 'edit'
+      }
+      const pending = paintingService.create({
+        providerId: 'aihubmix',
+        prompt: 'edit',
+        files: { input: ['parent-output'], output: [] },
+        editReceipt: receipt
+      })
+      const changedReceipt = {
+        ...receipt,
+        ...(invalid === 'missing parent' ? { parentPaintingId: 'not-a-painting' } : {}),
+        ...(invalid === 'wrong output' ? { parentFileId: 'other-output' } : {}),
+        ...(invalid === 'self parent' ? { parentPaintingId: pending.id } : {})
+      }
+      expect(() =>
+        paintingService.update(pending.id, {
+          ...(invalid === 'missing input' ? {} : { editReceipt: changedReceipt }),
+          ...(invalid === 'missing input' ? { files: { input: [], output: [] } } : {}),
+          ...(invalid === 'wrong output' ? { files: { input: ['other-output'], output: [] } } : {})
+        })
+      ).toThrow()
+      expect(paintingService.getById(pending.id)).toMatchObject({
+        editReceipt: receipt,
+        files: { input: ['parent-output'], output: [] }
+      })
+    }
+  )
+
+  it('completes a pending branch while preserving the validated parent input', async () => {
+    await seedFileEntry('parent-output')
+    await seedFileEntry('result-output')
+    const parent = paintingService.create(
+      p({ providerId: 'aihubmix', prompt: 'source', files: { input: [], output: ['parent-output'] } })
+    )
+    const receipt = {
+      parentPaintingId: parent.id,
+      parentFileId: 'parent-output',
+      originalPrompt: 'source',
+      instruction: 'edit'
+    }
+    const pending = paintingService.create({
+      providerId: 'aihubmix',
+      prompt: 'edit',
+      files: { input: ['parent-output'], output: [] },
+      editReceipt: receipt
+    })
+    paintingService.update(pending.id, { files: { input: ['parent-output'], output: ['result-output'] } })
+    expect(paintingService.getById(pending.id)).toMatchObject({
+      editReceipt: receipt,
+      files: { input: ['parent-output'], output: ['result-output'] }
+    })
+  })
+
+  it('allows a pending receipt to complete once and then protects the completed result', async () => {
+    await seedFileEntry('completed-image')
+    const receipt = { originalPrompt: 'original', instruction: 'original' }
+    const pending = paintingService.create({
+      providerId: 'aihubmix',
+      prompt: 'original',
+      files: { input: [], output: [] },
+      editReceipt: receipt
+    })
+    const execution = {
+      mode: 'generate',
+      interface: 'ai-sdk:image' as const,
+      adapter: 'openai',
+      requestedSize: '1024x1024'
+    }
+    const completed = paintingService.update(pending.id, {
+      files: { input: [], output: ['completed-image'] },
+      editReceipt: { ...receipt, execution }
+    })
+    expect(paintingService.getById(completed.id).editReceipt?.execution).toEqual(execution)
+    expect(() => paintingService.update(completed.id, { prompt: 'overwrite' })).toThrow()
+    expect(paintingService.getById(completed.id).prompt).toBe('original')
+  })
+
   it('assigns global order keys when creating paintings and inserts new items first', async () => {
     const first = paintingService.create(p({ providerId: 'aihubmix', prompt: 'first' }))
     const second = paintingService.create(p({ providerId: 'aihubmix', prompt: 'second' }))

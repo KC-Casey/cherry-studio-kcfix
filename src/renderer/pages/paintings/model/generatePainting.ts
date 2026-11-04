@@ -1,6 +1,7 @@
 import { ipcApi } from '@renderer/ipc'
 import type { FileMetadata } from '@renderer/types/file'
 import type { ImageGenerationMode } from '@shared/data/types/model'
+import type { PaintingExecution } from '@shared/data/types/painting'
 
 import { fileEntryToMetadata } from '../utils/fileEntryAdapter'
 import { runPainting } from './runPainting'
@@ -37,6 +38,7 @@ export interface GeneratePaintingOptions {
   readonly requestTimeoutMs?: number
   /** Attached input images, already encoded as `data:` URL strings. */
   readonly inputImages?: string[]
+  readonly onExecution?: (execution: PaintingExecution) => void
 }
 
 export function generatePainting(opts: GeneratePaintingOptions): Promise<FileMetadata[]> {
@@ -83,6 +85,7 @@ export function generatePainting(opts: GeneratePaintingOptions): Promise<FileMet
     // returned v2 `FileEntry` rows to the v1 `FileMetadata` the painting state
     // still consumes. No base64 round-trip.
     const files = await Promise.all(result.files.map(fileEntryToMetadata))
+    if (result.execution) opts.onExecution?.(result.execution)
     return files.length > 0 ? { files } : undefined
   })
 }

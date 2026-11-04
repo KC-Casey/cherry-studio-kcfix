@@ -1,7 +1,7 @@
 import * as z from 'zod'
 
 import type { Painting } from '@shared/data/types/painting'
-import { PaintingFilesSchema } from '@shared/data/types/painting'
+import { PaintingEditReceiptSchema, PaintingFilesSchema } from '@shared/data/types/painting'
 
 import type { CursorPaginationParams, CursorPaginationResponse } from '../types'
 import type { OrderEndpoints } from './_endpointHelpers'
@@ -30,7 +30,8 @@ export const CreatePaintingSchema = z
     providerId: TrimmedStringSchema,
     modelId: OptionalNullableTrimmedStringSchema.optional(),
     prompt: z.string(),
-    files: PaintingFilesSchema
+    files: PaintingFilesSchema,
+    editReceipt: PaintingEditReceiptSchema.optional()
   })
   .strict()
 export type CreatePaintingDto = z.infer<typeof CreatePaintingSchema>
@@ -40,7 +41,8 @@ export const UpdatePaintingSchema = z
     providerId: TrimmedStringSchema.optional(),
     modelId: OptionalNullableTrimmedStringSchema.optional(),
     prompt: z.string().optional(),
-    files: PaintingFilesSchema.optional()
+    files: PaintingFilesSchema.optional(),
+    editReceipt: PaintingEditReceiptSchema.optional()
   })
   .strict()
 export type UpdatePaintingDto = z.infer<typeof UpdatePaintingSchema>

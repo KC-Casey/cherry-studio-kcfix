@@ -1,0 +1,183 @@
+name: KC Fix Portable Prerelease
+run-name: KC Fix portable 2.1.11-kcfix.1 (${{ github.sha }})
+
+on:
+  push:
+    branches: [kcfix/portable-release]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kcfix-portable-release
+  cancel-in-progress: false
+
+env:
+  RELEASE_VERSION: 2.1.11-kcfix.1
+
+jobs:
+  build:
+    if: github.repository == 'KC-Casey/cherry-studio-kcfix' && github.ref == 'refs/heads/kcfix/portable-release'
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      CHERRY_EDITION: global
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      SENTRY_SOURCE_MAP_UPLOAD: "false"
+      NODE_OPTIONS: --max-old-space-size=8192
+      GOMEMLIMIT: 10GiB
+      ONNXRUNTIME_NODE_INSTALL: skip
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+      - uses: pnpm/action-setup@v5
+      - name: Verify release identity
+        shell: pwsh
+        run: |
+          $package = Get-Content package.json -Raw | ConvertFrom-Json
+          if ($package.version -ne $env:RELEASE_VERSION) { throw 'Commit package version does not match release version' }
+          if ((git rev-parse HEAD) -ne $env:GITHUB_SHA) { throw 'Unexpected checkout revision' }
+          Remove-Item Env:WIN_SIGN -ErrorAction SilentlyContinue
+      - run: pnpm install --frozen-lockfile
+      - name: Typecheck application processes
+        run: |
+          pnpm run typecheck:node
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          pnpm run typecheck:web
+      - name: Check image editing and data relocation contracts
+        run: |
+          pnpm rebuild:node
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          pnpm exec vitest run --maxWorkers=1 src/main/ai/utils/__tests__/normalizeImageEditInputs.test.ts src/main/data/db/__tests__/paintingReceiptMigration.test.ts src/main/data/services/__tests__/PaintingService.test.ts src/renderer/pages/paintings/model/__tests__/createPaintingBranch.test.ts src/shared/data/types/__tests__/paintingReceipt.test.ts src/renderer/pages/paintings/hooks/__tests__/usePaintingGenerationSubmit.test.ts src/renderer/pages/paintings/__tests__/PaintingPage.test.tsx src/main/services/userDataRelocation/__tests__/request.test.ts src/main/services/userDataRelocation/__tests__/validation.test.ts src/main/services/userDataRelocation/__tests__/execution.test.ts src/main/services/userDataRelocation/__tests__/skillExports.test.ts src/main/core/preboot/__tests__/userDataLocation.test.ts src/main/core/paths/__tests__/pathRegistry.test.ts
+      - name: Build production bundles
+        run: |
+          pnpm exec electron-vite build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          pnpm run build:utility-process
+      - name: Package unsigned Windows x64 portable executable
+        run: pnpm exec electron-builder --win portable --x64 --publish never
+      - name: Prepare portable download and checksums
+        shell: pwsh
+        run: |
+          $name = "cherry-studio-kcfix-$env:RELEASE_VERSION-win-x64-portable"
+          $matches = @(Get-ChildItem -Path dist -Recurse -File -Filter "$name.exe")
+          if ($matches.Count -ne 1) { throw "Expected exactly one $name.exe, found $($matches.Count)" }
+          New-Item -ItemType Directory -Path portable-release | Out-Null
+          Copy-Item $matches[0].FullName "portable-release/$name.exe"
+          @"
+          cherry-studio-kcfix $env:RELEASE_VERSION | Windows x64 portable preview
+          Source: https://github.com/KC-Casey/cherry-studio-kcfix/commit/$env:GITHUB_SHA
+          Build: https://github.com/KC-Casey/cherry-studio-kcfix/actions/runs/$env:GITHUB_RUN_ID
+
+          Extract the ZIP to a new writable folder, then run $name.exe. No installer is required.
+          This executable is unsigned. Windows may show a security warning. Verify SHA256SUMS before use.
+          Back up existing Cherry Studio data before testing. Do not replace an existing application folder.
+          Portable data normally lives in the data folder beside the EXE. Existing ~/.cherrystudio/boot-config.json
+          user-data mappings can override this location. This is not a guarantee of isolated or coexisting profiles.
+          主数据迁移：设置→数据→数据目录→应用数据→修改目录。
+          如需把主数据放到 D 盘，请选择一个新的空文件夹，等待应用复制完成并重启。
+          迁移前请备份；不要手动覆盖原来的数据目录。迁移主数据不代表完全不使用 C 盘：
+          用户主目录中的启动配置、系统临时文件、缓存或其他组件文件仍可能保留在 C 盘。
+          This preview adds image edit lineage and removes Cherry account/cloud entry points; third-party API/OAuth remains.
+          Production bundles, main/renderer typechecks and focused image-input, receipt, branching, UI and data relocation tests
+          are checked by this workflow, not the full test suite.
+          Windows interactive behavior and live provider image edits still require local testing.
+          Optional ONNX install-time binaries are skipped; local-model features download their runtime on first use.
+          本地模型所需运行库不随便携包预装，首次使用时需要联网下载。
+          The exact source commit, version, locked dependencies and Actions run identify this build; byte-for-byte
+          reproducibility is not claimed (unsigned Windows packaging and runner/toolchain can vary).
+          "@ | Set-Content portable-release/README.txt -Encoding utf8
+          Compress-Archive -Path "portable-release/$name.exe", portable-release/README.txt -DestinationPath "portable-release/$name.zip"
+          Get-Item "portable-release/$name.exe", "portable-release/$name.zip", portable-release/README.txt | Sort-Object Name | ForEach-Object {
+            "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)"
+          } | Set-Content portable-release/SHA256SUMS -Encoding ascii
+      - uses: actions/upload-artifact@v6
+        with:
+          name: kcfix-portable-${{ github.sha }}
+          path: portable-release/*
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    needs: build
+    if: github.repository == 'KC-Casey/cherry-studio-kcfix' && github.ref == 'refs/heads/kcfix/portable-release'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: kcfix-portable-${{ github.sha }}
+          path: portable-release
+      - name: Stage, verify and publish fork prerelease
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('node:fs');
+            const crypto = require('node:crypto');
+            const { owner, repo } = context.repo;
+            if (owner !== 'KC-Casey' || repo !== 'cherry-studio-kcfix') throw new Error('Unexpected release destination');
+            const version = process.env.RELEASE_VERSION;
+            const tag = `v${version}`;
+            const prefix = `cherry-studio-kcfix-${version}-win-x64-portable`;
+            const expected = [`${prefix}.exe`, `${prefix}.zip`, 'README.txt', 'SHA256SUMS'].sort();
+            const actual = fs.readdirSync('portable-release').sort();
+            if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error('Unexpected artifact contents');
+            const hash = data => crypto.createHash('sha256').update(data).digest('hex');
+            const sums = fs.readFileSync('portable-release/SHA256SUMS', 'utf8').trim().split(/\r?\n/);
+            if (sums.length !== 3) throw new Error('Unexpected checksum count');
+            for (const name of expected.filter(name => name !== 'SHA256SUMS')) {
+              const digest = hash(fs.readFileSync(`portable-release/${name}`));
+              if (!sums.includes(`${digest}  ${name}`)) throw new Error(`Checksum mismatch: ${name}`);
+            }
+            const readme = fs.readFileSync('portable-release/README.txt', 'utf8');
+            if (!readme.includes(`/commit/${context.sha}`) || !readme.includes(version)) throw new Error('Artifact provenance mismatch');
+            async function requireAbsent(request) {
+              try { await request(); } catch (error) { if (error.status === 404) return; throw error; }
+              throw new Error(`Refusing to replace existing ${tag} tag or release; inspect any earlier draft/run manually`);
+            }
+            await requireAbsent(() => github.rest.git.getRef({ owner, repo, ref: `tags/${tag}` }));
+            await requireAbsent(() => github.rest.repos.getReleaseByTag({ owner, repo, tag }));
+            const drafts = await github.paginate(github.rest.repos.listReleases, { owner, repo, per_page: 100 });
+            if (drafts.some(release => release.tag_name === tag)) throw new Error('Existing draft requires manual inspection');
+            const { data: release } = await github.rest.repos.createRelease({
+              owner, repo, tag_name: tag, target_commitish: context.sha,
+              name: `cherry-studio-kcfix ${version} - Windows portable preview`,
+              body: readme, draft: true, prerelease: true, make_latest: 'false'
+            });
+            core.notice(`Staging draft release ${release.id}; failures leave it unpublished for inspection`);
+            for (const name of expected) {
+              const data = fs.readFileSync(`portable-release/${name}`);
+              const { data: asset } = await github.rest.repos.uploadReleaseAsset({
+                owner, repo, release_id: release.id, name, data,
+                headers: { 'content-type': 'application/octet-stream', 'content-length': data.length }
+              });
+              if (asset.state !== 'uploaded' || asset.size !== data.length) throw new Error(`Upload incomplete: ${name}`);
+              const downloaded = await github.rest.repos.getReleaseAsset({
+                owner, repo, asset_id: asset.id, headers: { accept: 'application/octet-stream' }
+              });
+              if (hash(Buffer.from(downloaded.data)) !== hash(data)) throw new Error(`Uploaded bytes differ: ${name}`);
+            }
+            const assets = await github.paginate(github.rest.repos.listReleaseAssets, { owner, repo, release_id: release.id });
+            if (JSON.stringify(assets.map(asset => asset.name).sort()) !== JSON.stringify(expected)) throw new Error('Release asset list mismatch');
+            try {
+              const { data: stagedRef } = await github.rest.git.getRef({ owner, repo, ref: `tags/${tag}` });
+              if (stagedRef.object.type !== 'commit' || stagedRef.object.sha !== context.sha) {
+                throw new Error('Staged tag targets another object; refusing publication');
+              }
+            } catch (error) {
+              if (error.status !== 404) throw error;
+            }
+            const { data: published } = await github.rest.repos.updateRelease({
+              owner, repo, release_id: release.id, draft: false, prerelease: true, make_latest: 'false'
+            });
+            const { data: ref } = await github.rest.git.getRef({ owner, repo, ref: `tags/${tag}` });
+            if (ref.object.sha !== context.sha || published.draft || !published.prerelease) throw new Error('Published release verification failed; inspect before retrying');
+            await core.summary.addLink('Download portable prerelease', published.html_url).write();

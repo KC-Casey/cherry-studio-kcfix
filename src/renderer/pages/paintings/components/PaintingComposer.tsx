@@ -1,5 +1,6 @@
 import { BookOpen, Settings2 } from 'lucide-react'
 import { type FC, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 
 import { Button, Popover, PopoverContent, PopoverTrigger, Tooltip } from '@cherrystudio/ui'
@@ -134,6 +135,7 @@ function paramsSummary(
 }
 
 export interface PaintingComposerProps {
+  settingsContainer?: HTMLElement | null
   painting: PaintingData
   /** Data-derived: a generation is running for this painting (possibly resumed). */
   generating: boolean
@@ -216,7 +218,8 @@ const PaintingComposerInner: FC<PaintingComposerInnerProps> = ({
   onConfigChange,
   onGenerateRandomSeed,
   model,
-  couldAddImageFile
+  couldAddImageFile,
+  settingsContainer
 }) => {
   const { t } = useTranslation()
   const { files, isExpanded } = useComposerToolState()
@@ -281,7 +284,8 @@ const PaintingComposerInner: FC<PaintingComposerInnerProps> = ({
     files,
     setFiles,
     inputCapability,
-    providerId: painting.providerId
+    providerId: painting.providerId,
+    preserveInputs: !!painting.editReceipt?.parentFileId
   })
 
   // Edit-image models: images live in the top reference-image tray (reads `files` from
@@ -303,6 +307,25 @@ const PaintingComposerInner: FC<PaintingComposerInnerProps> = ({
   return (
     <ComposerToolDerivedStateProvider couldAddImageFile={couldAddImageFile} extensions={PAINTING_IMAGE_EXTS}>
       <ComposerToolRuntimeHost scope={PAINTING_SCOPE} model={model} />
+      {settingsContainer &&
+        createPortal(
+          <div className="flex flex-col gap-4">
+            <PaintingModelSelector painting={painting} onSelect={onModelSelect} />
+            <PaintingSettings
+              painting={painting}
+              onConfigChange={onConfigChange}
+              onGenerateRandomSeed={onGenerateRandomSeed}
+            />
+            {couldAddImageFile && (
+              <section>
+                <p className="mb-2 text-xs font-medium">{t('paintings.workbench.references')}</p>
+                <PaintingImageGallery />
+                <PaintingImageAddButton />
+              </section>
+            )}
+          </div>,
+          settingsContainer
+        )}
       <ComposerSurface
         onActionsChange={(actions) => {
           surfaceActions.current = actions
@@ -313,11 +336,16 @@ const PaintingComposerInner: FC<PaintingComposerInnerProps> = ({
         tokens={tokens}
         managedTokenKinds={couldAddImageFile ? PAINTING_NO_MANAGED_TOKEN_KINDS : PAINTING_MANAGED_TOKEN_KINDS}
         onTokensChange={handleTokensChange}
-        topContent={couldAddImageFile ? <PaintingImageGallery /> : undefined}
-        leadingContent={couldAddImageFile ? <PaintingImageAddButton /> : undefined}
+        topContent={!settingsContainer && couldAddImageFile ? <PaintingImageGallery /> : undefined}
+        leadingContent={!settingsContainer && couldAddImageFile ? <PaintingImageAddButton /> : undefined}
         placeholder={placeholder}
         sendDisabled={
-          generating || submitting || !model || (text.trim().length === 0 && files.length === 0) || missingRequiredImage
+          generating ||
+          submitting ||
+          !model ||
+          (!!painting.editReceipt?.parentFileId && !couldAddImageFile) ||
+          (text.trim().length === 0 && files.length === 0) ||
+          missingRequiredImage
         }
         sendBlockedReason={missingRequiredImage ? t('paintings.edit.image_required') : undefined}
         isLoading={generating}
@@ -343,17 +371,21 @@ const PaintingComposerInner: FC<PaintingComposerInnerProps> = ({
             unifiedPanelControl={unifiedPanelControl}
             renderContextControls={({ iconOnly }) => (
               <>
-                <PaintingModelSelector
-                  hideTitle
-                  painting={painting}
-                  onSelect={onModelSelect}
-                  className={cn(COMPOSER_SELECTOR_BUTTON_CLASS, 'w-auto max-w-[200px] border border-border-subtle')}
-                />
-                <PaintingParamsButton
-                  painting={painting}
-                  onConfigChange={onConfigChange}
-                  onGenerateRandomSeed={onGenerateRandomSeed}
-                />
+                {!settingsContainer && (
+                  <>
+                    <PaintingModelSelector
+                      hideTitle
+                      painting={painting}
+                      onSelect={onModelSelect}
+                      className={cn(COMPOSER_SELECTOR_BUTTON_CLASS, 'w-auto max-w-[200px] border border-border-subtle')}
+                    />
+                    <PaintingParamsButton
+                      painting={painting}
+                      onConfigChange={onConfigChange}
+                      onGenerateRandomSeed={onGenerateRandomSeed}
+                    />
+                  </>
+                )}
                 <Tooltip content={t('settings.prompts.title')}>
                   <Button
                     ref={(element) => {

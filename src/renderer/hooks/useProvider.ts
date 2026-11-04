@@ -1,5 +1,5 @@
 import { isUndefined, omitBy } from 'es-toolkit/compat'
-import { useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 import type { SWRConfiguration } from 'swr'
 
 import { useMutation, useQuery } from '@data/hooks/useDataApi'
@@ -14,6 +14,7 @@ import type {
   UpdateProviderDto
 } from '@shared/data/api/schemas/providers'
 import type { ConcreteApiPaths } from '@shared/data/api/types'
+import { isCherryOwnedProviderId } from '@shared/data/presets/cherryai'
 import type { ApiKeyEntry, AuthConfig, Provider } from '@shared/data/types/provider'
 
 const EMPTY_PROVIDERS: Provider[] = []
@@ -74,7 +75,12 @@ export function useProviders(
     [createTrigger]
   )
 
-  const providers = data ?? EMPTY_PROVIDERS
+  const providers = useMemo(() => {
+    const all = data ?? EMPTY_PROVIDERS
+    return all.some((provider) => isCherryOwnedProviderId(provider.id))
+      ? all.filter((provider) => !isCherryOwnedProviderId(provider.id))
+      : all
+  }, [data])
 
   return {
     providers,

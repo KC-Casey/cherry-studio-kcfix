@@ -42,6 +42,12 @@ Detach only removes a delivery lease. It never aborts a model or releases a nati
 
 The low-level `ai.stream.attach/detach` and chunk events remain available for existing raw-stream consumers. SSE, channel and one-shot prompt listeners keep their stream-specific contracts. Desktop root/child views no longer use chunk replay or `IpcChatTransport`.
 
+## Image generation results
+
+`ai.image.generate` returns persisted `FileEntry` outputs and an optional `execution` receipt. Main records the branch it actually selected: `ai-sdk:image` or `job:image`, its adapter identifier, the operation mode, and requested size/quality when supplied. These identify the execution channel and adapter, not a verified HTTP endpoint or a server-reported effective size/quality. Missing effective values remain unknown.
+
+The output receipt contains allowlisted metadata only. It does not expose provider configuration, request headers, API keys, tokens, response bodies, or credential-bearing URLs. The renderer joins this receipt to its immutable submission snapshot; it does not infer the interface from a model name. The original generation prompt is a separate local history record and is not appended to the edit request prompt. See [Image Generation Parameters](./image-generation-parameters.md#persisted-edit-receipts) for the persistence contract.
+
 ## Related references
 
 - [Execution Overlay](./execution-overlay.md) — projection publication and recovery.

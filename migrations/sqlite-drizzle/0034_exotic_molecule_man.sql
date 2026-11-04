@@ -1,0 +1,1 @@
+ALTER TABLE `painting` ADD `edit_receipt` text;

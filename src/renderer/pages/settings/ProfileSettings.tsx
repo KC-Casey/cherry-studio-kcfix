@@ -1,9 +1,5 @@
-import { AccountSignOutButton } from '@renderer/components/AccountSignOutButton'
 import { SettingsContentColumn } from '@renderer/components/SettingsPrimitives'
 import { UserProfileEditor } from '@renderer/components/UserProfileEditor'
-import { getAppEdition } from '@renderer/utils/appEdition'
-
-import { SubscriptionSettings } from './SubscriptionSettings'
 
 export function ProfileSettings() {
   return (
@@ -12,8 +8,6 @@ export function ProfileSettings() {
         <div id="setting-profile-profile">
           <UserProfileEditor />
         </div>
-        {getAppEdition() === 'global' && <SubscriptionSettings />}
-        <AccountSignOutButton />
       </div>
     </SettingsContentColumn>
   )

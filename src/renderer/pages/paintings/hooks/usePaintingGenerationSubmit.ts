@@ -1,7 +1,9 @@
 import { useCallback, useRef, useState } from 'react'
 
+import { createPaintingGenerateError } from '@shared/ai/paintingGenerateError'
 import type { FileEntry } from '@shared/data/types/file'
 
+import { presentPaintingGenerateError } from '../errors/paintingGenerateError'
 import type { PaintingData } from '../model/types/paintingData'
 import type { ModelOption } from '../model/types/paintingModel'
 import { presentPaintingGenerationGuardFeedback } from '../utils/presentPaintingGenerationGuardFeedback'
@@ -84,6 +86,13 @@ export function usePaintingGenerationSubmit({
         // dropped the failed chip and told the user; generating anyway would spend
         // the request on a silently smaller input set.
         if (!complete) return
+        if (
+          painting.editReceipt?.parentFileId &&
+          !entries.some((entry) => entry.id === painting.editReceipt?.parentFileId)
+        ) {
+          presentPaintingGenerateError(createPaintingGenerateError('EDIT_IMAGE_REQUIRED'))
+          return
+        }
         await generate(entries, () => setPreparing(false))
       } finally {
         submittingRef.current = false
@@ -91,7 +100,7 @@ export function usePaintingGenerationSubmit({
         setPreparing(false)
       }
     },
-    [generate, generating, painting.providerId, validateBeforeGenerate]
+    [generate, generating, painting.providerId, painting.editReceipt?.parentFileId, validateBeforeGenerate]
   )
 
   return { generating, submitting, preparing, submit, cancel }

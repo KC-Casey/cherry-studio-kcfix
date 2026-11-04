@@ -1,5 +1,5 @@
 ---
-description: How clients check for updates through the managed release service, with channels and the release history feed
+description: Private-fork update protection and historical upstream managed-release architecture
 sources:
   - src/main/services/AppUpdaterService.ts
   - resources/cherry-studio/release-history.json
@@ -10,6 +10,14 @@ sources:
 ---
 
 # App Update Architecture
+
+## Private fork behavior
+
+In cherry-studio-kcfix, AppUpdaterService is an offline compatibility facade. It reports update availability as unsupported, returns no remote release history, never schedules checks or downloads an installer, and refuses installation requests, including requests from stale renderer state. About settings omit updater and test-channel controls. Upstream feed configuration below is retained only as historical build configuration, not active application behavior. No fork release channel or publication is configured by this change.
+
+## Upstream reference
+
+The remaining sections describe the inherited upstream implementation, which this private fork no longer executes.
 
 ## Overview
 

@@ -7,6 +7,9 @@ import type { PaintingData } from '../../model/types/paintingData'
 
 const mockValidateBeforeGenerate = vi.hoisted(() => vi.fn())
 const mockGenerate = vi.hoisted(() => vi.fn())
+const mockPresentError = vi.hoisted(() => vi.fn())
+vi.mock('../../errors/paintingGenerateError', () => ({ presentPaintingGenerateError: mockPresentError }))
+
 const mockPresentGuardFeedback = vi.hoisted(() => vi.fn())
 
 vi.mock('../usePaintingGenerationGuard', () => ({
@@ -91,6 +94,25 @@ describe('usePaintingGenerationSubmit', () => {
 
     expect(materialize).toHaveBeenCalledTimes(1)
     expect(mockGenerate).not.toHaveBeenCalled()
+  })
+
+  it('refuses an edit when the exact selected source is missing, even if another reference remains', async () => {
+    const { result } = renderSubmit(
+      makePainting({
+        editReceipt: {
+          parentPaintingId: 'parent',
+          parentFileId: 'source',
+          originalPrompt: 'original',
+          instruction: 'edit'
+        }
+      })
+    )
+    await act(async () => {
+      await result.current.submit(async () => ({ entries: [{ id: 'reference' }] as FileEntry[], complete: true }))
+    })
+    expect(mockGenerate).not.toHaveBeenCalled()
+    expect(mockPresentError).toHaveBeenCalledWith(expect.objectContaining({ code: 'EDIT_IMAGE_REQUIRED' }))
+    expect(result.current.submitting).toBe(false)
   })
 
   it('ignores a second submit while one is in flight (synchronous re-entrancy guard)', async () => {

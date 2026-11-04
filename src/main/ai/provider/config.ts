@@ -12,7 +12,12 @@ import type { CherryInProviderSettings } from '@cherrystudio/ai-sdk-provider'
 import { providerService, type ResolvedProviderApiKey } from '@main/data/services/ProviderService'
 import { copilotService } from '@main/services/CopilotService'
 import { mergeHeaders } from '@main/utils/http'
-import { CHERRYAI_PROVIDER_ID, isManagedCherryCloudModel } from '@shared/data/presets/cherryai'
+import {
+  CHERRY_HOSTED_SERVICES_ENABLED,
+  CHERRYAI_PROVIDER_ID,
+  isManagedCherryCloudModel,
+  isCherryOwnedProviderId
+} from '@shared/data/presets/cherryai'
 import { OPENAI_CODEX_PROVIDER_ID } from '@shared/data/presets/codex'
 import { GROK_CLI_PROVIDER_ID } from '@shared/data/presets/grokCli'
 import { LOCAL_EMBEDDING_PROVIDER_ID } from '@shared/data/presets/localEmbedding'
@@ -216,6 +221,8 @@ export async function resolveProviderAiSdkConfig(
   model: Model,
   options?: ProviderToAiSdkConfigOptions
 ): Promise<ResolvedProviderAiSdkConfig> {
+  if (!CHERRY_HOSTED_SERVICES_ENABLED && isCherryOwnedProviderId(provider.id))
+    throw new Error('Cherry-hosted providers are disabled in cherry-studio-kcfix.')
   const { endpointType, baseUrl } = options?.resolvedEndpoint ?? resolveEffectiveEndpoint(provider, model)
 
   const aiSdkProviderId = appProviderIds[resolveAiSdkProviderId(provider, endpointType)]

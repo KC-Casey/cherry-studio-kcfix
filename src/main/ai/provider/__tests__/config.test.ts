@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { readProviderRegistry, RegistryLoader } from '@cherrystudio/provider-registry/node'
 import { mergePresetModel } from '@data/services/ProviderRegistryService'
+import type * as CherryPresets from '@shared/data/presets/cherryai'
 import {
   CHERRY_CLOUD_MODEL_GROUP,
   CHERRY_CLOUD_PROVIDER_ID,
@@ -31,6 +32,14 @@ import { createNewApi, type NewApiProviderSettings } from '../custom/newapiProvi
 import { buildVendorProviderOptions } from '../custom/wire/buildImageRequest'
 import { WIRE_REGISTRY } from '../custom/wire/wireProfile'
 import { resolveWireModelId } from '../endpoint'
+
+const hostedServices = vi.hoisted(() => ({ enabled: true }))
+vi.mock('@shared/data/presets/cherryai', async (importOriginal) => ({
+  ...(await importOriginal<typeof CherryPresets>()),
+  get CHERRY_HOSTED_SERVICES_ENABLED() {
+    return hostedServices.enabled
+  }
+}))
 
 // Key-backed builders resolve their serving API key lazily; Vertex/Bedrock read
 // provider auth config from the direct-import ProviderService singleton. Mock
@@ -72,6 +81,7 @@ vi.mock('@main/services/CopilotService', () => ({
 const { providerToAiSdkConfig, resolveProviderAiSdkConfig } = await import('../config')
 
 beforeEach(() => {
+  hostedServices.enabled = true
   vi.clearAllMocks()
   resolveApiKeyMock.mockImplementation((_providerId: string, override?: string) => ({
     value: override ?? 'sk-test-key',
@@ -89,6 +99,20 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+})
+
+describe('private fork hosted provider boundary', () => {
+  it.each(['cherryai', 'cherryai-subscription', 'cherryin'])(
+    'rejects %s before resolving credentials or transport',
+    async (id) => {
+      hostedServices.enabled = false
+      await expect(resolveProviderAiSdkConfig(makeProvider({ id }), makeModel({ providerId: id }))).rejects.toThrow(
+        'disabled in cherry-studio-kcfix'
+      )
+      expect(resolveApiKeyMock).not.toHaveBeenCalled()
+      expect(buildCherryCloudProviderConfigMock).not.toHaveBeenCalled()
+    }
+  )
 })
 
 describe('providerToAiSdkConfig — builder dispatch matrix', () => {
