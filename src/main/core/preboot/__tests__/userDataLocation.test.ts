@@ -323,10 +323,10 @@ describe('resolveUserDataLocation', () => {
       const { resolveUserDataLocation } = await loadModule()
       resolveUserDataLocation()
 
-      expect(mkdirSync).toHaveBeenCalledWith('/private/tmp/cherry-profile/userData', { recursive: true })
-      expect(mkdirSync).toHaveBeenCalledWith('/private/tmp/cherry-profile/home/temp', { recursive: true })
-      expect(setPathMock).toHaveBeenCalledWith('temp', '/private/tmp/cherry-profile/home/temp')
-      expect(setPathMock).toHaveBeenCalledWith('userData', '/private/tmp/cherry-profile/userData')
+      expect(mkdirSync).toHaveBeenCalledWith(join('/private/tmp/cherry-profile', 'userData'), { recursive: true })
+      expect(mkdirSync).toHaveBeenCalledWith(join('/private/tmp/cherry-profile', 'home', 'temp'), { recursive: true })
+      expect(setPathMock).toHaveBeenCalledWith('temp', join('/private/tmp/cherry-profile', 'home', 'temp'))
+      expect(setPathMock).toHaveBeenCalledWith('userData', join('/private/tmp/cherry-profile', 'userData'))
       expect(bootConfigGetMock).not.toHaveBeenCalled()
     })
 
