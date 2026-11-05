@@ -61,7 +61,14 @@ Build: https://github.com/KC-Casey/cherry-studio-kcfix/actions/runs/$RunId
    本版本未签名，Windows 可能提示安全警告。先核对 SHA256SUMS 和来源，再按自己的安全判断决定是否运行。
    可在 PowerShell 中执行 Get-FileHash .\$name.zip -Algorithm SHA256 核对校验值。
 
-本次图片工作台修复
+本次模型信息识别更新
+- 新增 GPT Image 2.6 精确目录；新添加的已知模型可继承已验证的模态和能力。目录缺失的限制及价格保持未知，不代表免费。
+- 新添加的未知模型可采用 Gemini/OpenRouter 返回的已验证结构化元数据；不会根据陌生模型名字猜能力，也不会定期覆盖既有自定义配置。
+- 已有模型保持原样。需要采用目录信息时，到 设置→模型服务→编辑模型→自动模型信息，点击“使用目录默认配置”并确认。
+  此操作会一起恢复能力、输入/输出模态、令牌限制、流式支持、参数、推理及价格；保留模型身份、名称、分组、接口和启用状态。恢复后仍可手动覆盖。
+- 目录说明模型支持，不保证具体中转服务、账户权限或接口路由可用；真实服务商仍需实测。
+
+保留的图片工作台修复
 - 选中的输出图保留为下一轮父图；输入本轮指令即可继续编辑，点左侧任意旧图可分叉。
 - 左侧显示父子谱系，中间保留缩放、旋转及改前/改后对比，右侧区分只读生成记录和下一轮参数。
 - 灰色发送按钮会解释原因。仅在服务商确实支持图片编辑时，到 设置→模型服务→编辑模型→更多设置→输入模态 启用视觉；或选择已支持编辑的模型。不会自动修改已有模型配置。
@@ -80,6 +87,13 @@ Wait for copying and restart; do not manually overwrite existing data. Boot conf
 can still remain on C:. After moving the application folder, reconfigure startup and shortcuts for the new location.
 This build is unsigned. Verify the ZIP hash against SHA256SUMS and assess any Windows security warning before running.
 
+Model metadata: new exact GPT Image 2.6 catalog entries provide verified modalities/capabilities. Unknown limits and prices
+stay unknown, not zero/free. Validated Gemini/OpenRouter listing metadata initializes newly added unknown custom models;
+it does not continuously refresh or overwrite existing custom configuration. Existing models remain unchanged until you
+explicitly restore catalog defaults in Settings > Model Provider > Edit model. Confirmation restores capabilities, modalities,
+token limits, streaming, parameters, reasoning and pricing together while preserving identity, name, grouping, routes and
+status. Later manual edits still override defaults. Catalog support does not guarantee gateway/account/route availability.
+
 Image workbench: the selected output is retained for the next edit. Older images create new branches. The left panel shows
 parent/child lineage; the center keeps zoom, rotate and before/after comparison; the right separates read-only receipts from
 next-edit settings. Disabled sends explain missing image-input capability or unsupported text attachments. Enable Vision only
@@ -89,9 +103,10 @@ provider-effective dimensions/quality and execution details remain unknown rathe
 Within the same window/tab, navigating to Chat or Settings and back retains the source, unsent instruction and attachments.
 Unsent drafts are not saved across application exit; generated outputs and their records remain in history.
 Cherry account/cloud entry points remain removed; third-party API/OAuth remains.
-Production bundles, main/renderer typechecks, focused image/data/portable tests and packaging contracts are checked by this
+Production bundles, main/renderer typechecks, focused model metadata/image/data/portable tests and packaging contracts are checked by this
 workflow, not the full test suite. Publication additionally requires the exact ZIP to pass an isolated Windows Electron test
-covering generation, sequential edits, branching, before/after and process restart against a loopback image API fixture.
+covering model settings, confirmed catalog restoration, manual overrides, generation, sequential edits, branching,
+before/after and process restart against a loopback image API fixture.
 The fixture verifies request routing and source-image bytes, not your provider, image quality or performance on your machine.
 Live provider editing and actual local Windows experience still need your testing.
 Optional local-model runtimes are downloaded on first use; they are not included. 本地模型运行库首次使用需联网下载。

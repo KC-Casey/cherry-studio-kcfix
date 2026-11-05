@@ -731,6 +731,11 @@ function getOpenRouterModelMetadata(raw: unknown): Partial<Model> {
 const openRouterFetcher: ModelFetcher = {
   match: (p) => matchesPreset(p, SystemProviderIds.openrouter),
   fetch: async (provider, signal, options) => {
+    const baseUrl = formatApiHost(getBaseUrl(provider))
+    // Registry listing URLs belong to OpenRouter, not a user-configured proxy or gateway.
+    if (baseUrl && baseUrl !== 'https://openrouter.ai/api/v1') {
+      return listOpenAICompatibleModels(provider, baseUrl, signal)
+    }
     const headers = defaultHeaders(provider)
     const modelsApiUrls = provider.endpointConfigs?.[ENDPOINT_TYPE.OPENAI_CHAT_COMPLETIONS]?.modelsApiUrls
     const [modelsResponse, embedModelsResponse, imageModelsResponse, rerankModelsResponse] = await Promise.all([

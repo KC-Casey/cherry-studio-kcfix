@@ -1,4 +1,9 @@
 {
   "extends": "../../../tsconfig.e2e.json",
-  "include": ["scenarios/paintingWorkbench.ts", "fixtures/workbenchImageServer.ts", "../../../src/preload/*.d.ts"]
+  "include": [
+    "scenarios/paintingWorkbench.ts",
+    "scenarios/paintingModelCatalog.ts",
+    "fixtures/workbenchImageServer.ts",
+    "../../../src/preload/*.d.ts"
+  ]
 }

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -244,6 +244,69 @@ describe('EditModelDrawer', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Restore catalog test action' })).not.toBeDisabled())
     expect(updateModelMock).not.toHaveBeenCalledWith('openai', 'claude-4-sonnet', { restoreCatalogDefaults: true })
     expect(input).toHaveValue('7')
+  })
+
+  it('uses restored metadata for later edits without reviving discarded hidden capabilities', async () => {
+    const user = userEvent.setup()
+    const model: Model = { ...makePricingModel(), capabilities: ['code-execution'], inputModalities: [] }
+    const restored: Model = {
+      ...model,
+      capabilities: ['function-call', 'image-recognition', 'structured-output', 'file-input'],
+      inputModalities: ['text', 'image']
+    }
+    updateModelMock.mockResolvedValue(restored)
+    render(<EditModelDrawer providerId="openai" open onClose={vi.fn()} model={model} />)
+
+    await user.click(screen.getByRole('button', { name: 'Restore catalog test action' }))
+    await user.click(screen.getByRole('button', { name: 'models.type.reasoning' }))
+
+    expect(updateModelMock.mock.lastCall?.[2]).toMatchObject({
+      capabilities: ['structured-output', 'file-input', 'function-call', 'reasoning'],
+      inputModalities: ['text', 'image']
+    })
+
+    await user.click(screen.getByRole('button', { name: 'common.reset' }))
+    expect(screen.getByRole('button', { name: 'models.type.function_calling' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'models.type.reasoning' })).toHaveAttribute('aria-pressed', 'false')
+    expect(updateModelMock.mock.lastCall?.[2]).toMatchObject({
+      capabilities: ['structured-output', 'file-input', 'function-call'],
+      inputModalities: ['text', 'image']
+    })
+  })
+
+  it('does not apply a completed restoration to a newly selected model', async () => {
+    const user = userEvent.setup()
+    const model = makePricingModel()
+    const nextModel: Model = {
+      ...model,
+      id: 'openai::other-model',
+      name: 'Other model',
+      capabilities: ['code-execution'],
+      inputModalities: ['text']
+    }
+    let resolveRestore!: (value: Model) => void
+    updateModelMock.mockReturnValueOnce(
+      new Promise<Model>((resolve) => {
+        resolveRestore = resolve
+      })
+    )
+    const { rerender } = render(<EditModelDrawer providerId="openai" open onClose={vi.fn()} model={model} />)
+    await user.click(screen.getByRole('button', { name: 'Restore catalog test action' }))
+    rerender(<EditModelDrawer providerId="openai" open onClose={vi.fn()} model={nextModel} />)
+    await act(async () => {
+      resolveRestore({ ...model, capabilities: ['structured-output'], inputModalities: ['text', 'image'] })
+    })
+
+    await user.click(screen.getByRole('button', { name: 'models.type.reasoning' }))
+    expect(updateModelMock.mock.lastCall).toEqual([
+      'openai',
+      'other-model',
+      expect.objectContaining({
+        name: 'Other model',
+        capabilities: ['code-execution', 'reasoning'],
+        inputModalities: ['text']
+      })
+    ])
   })
 
   it('saves an image rate without inventing token prices and retains it when editing tokens', async () => {

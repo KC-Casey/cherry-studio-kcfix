@@ -85,14 +85,14 @@ describe('regression execution plan', () => {
     ['notes', ['N-01', 'MP-11', 'MP-74', 'MP-75', 'MP-76', 'MP-77', 'MP-78', 'MP-79']],
     ['knowledge', ['K-01', 'MP-59', 'MP-60', 'MP-61', 'MP-62', 'MP-63', 'MP-64', 'MP-65', 'MP-66', 'MP-67']],
     ['code-tools', ['CODE-01', 'CODE-02', 'CODE-03', 'MP-97']],
-    ['paintings', ['P-01', 'P-02', 'MP-90', 'MP-91', 'MP-92']],
+    ['paintings', ['P-01', 'P-02', 'P-03', 'MP-90', 'MP-91', 'MP-92']],
     ['translation', ['T-01', 'T-02', 'MP-81', 'MP-82', 'MP-83', 'MP-85', 'MP-86']]
   ] as const)('includes existing scenarios as well as case-library scenarios in %s', (task, ids) => {
     expect(selectCases(task).map(({ id }) => id)).toEqual(ids)
   })
 
   it.each([
-    ['painting-workbench', ['P-02']],
+    ['painting-workbench', ['P-02', 'P-03']],
     ['notes-smoke', ['N-01']],
     ['knowledge-smoke', ['K-01']],
     ['mini-app-pinning', ['MP-103']],
@@ -186,43 +186,46 @@ describe('regression execution plan', () => {
   })
 })
 
-it.each(['all', 'notes', 'notes-smoke', 'knowledge', 'code-tools', 'code-cli-permissions'] as const)(
-  'discovers the selected %s cases through Playwright without matching another task prefix',
-  (task) => {
-    const directory = mkdtempSync(join(tmpdir(), 'cherry-regression-enumeration-'))
-    try {
-      const cli = createRequire(import.meta.url).resolve('@playwright/test/cli')
-      const args = [cli, 'test', '--config', 'playwright.regression.config.ts', '--list', '--reporter=json']
-      if (task !== 'all') args.push('--grep', `@${task}(?:\\s|$)`)
-      const report = JSON.parse(
-        execFileSync(process.execPath, args, {
-          encoding: 'utf8',
-          timeout: 20_000,
-          env: { ...process.env, CHERRY_TEST_RUN_DIR: directory }
-        })
-      ) as JSONReport
-      const collect = (suites: JSONReportSuite[]): Array<{ id: string | undefined; tasks: string[]; phase: string }> =>
-        suites.flatMap((suite) => [
-          ...suite.specs.flatMap((spec) =>
-            spec.tests.map((test) => ({
-              id: test.annotations.find(({ type }) => type === 'regression-case')?.description,
-              tasks: spec.tags,
-              phase: basename(spec.file, '.test.ts')
-            }))
-          ),
-          ...collect(suite.suites ?? [])
-        ])
-      expect(report.errors).toEqual([])
-      const discovered = collect(report.suites)
-      const selected = selectCases(task).map(({ id, tasks, phase }) => ({ id, tasks, phase }))
-      expect(discovered).toHaveLength(selected.length)
-      for (const phase of PHASE_IDS) {
-        expect(discovered.filter((test) => test.phase === phase)).toEqual(
-          selected.filter((test) => test.phase === phase)
-        )
-      }
-    } finally {
-      rmSync(directory, { recursive: true, force: true })
+it.each([
+  'all',
+  'notes',
+  'notes-smoke',
+  'knowledge',
+  'code-tools',
+  'code-cli-permissions',
+  'painting-workbench'
+] as const)('discovers the selected %s cases through Playwright without matching another task prefix', (task) => {
+  const directory = mkdtempSync(join(tmpdir(), 'cherry-regression-enumeration-'))
+  try {
+    const cli = createRequire(import.meta.url).resolve('@playwright/test/cli')
+    const args = [cli, 'test', '--config', 'playwright.regression.config.ts', '--list', '--reporter=json']
+    if (task !== 'all') args.push('--grep', `@${task}(?:\\s|$)`)
+    const report = JSON.parse(
+      execFileSync(process.execPath, args, {
+        encoding: 'utf8',
+        timeout: 20_000,
+        env: { ...process.env, CHERRY_TEST_RUN_DIR: directory }
+      })
+    ) as JSONReport
+    const collect = (suites: JSONReportSuite[]): Array<{ id: string | undefined; tasks: string[]; phase: string }> =>
+      suites.flatMap((suite) => [
+        ...suite.specs.flatMap((spec) =>
+          spec.tests.map((test) => ({
+            id: test.annotations.find(({ type }) => type === 'regression-case')?.description,
+            tasks: spec.tags,
+            phase: basename(spec.file, '.test.ts')
+          }))
+        ),
+        ...collect(suite.suites ?? [])
+      ])
+    expect(report.errors).toEqual([])
+    const discovered = collect(report.suites)
+    const selected = selectCases(task).map(({ id, tasks, phase }) => ({ id, tasks, phase }))
+    expect(discovered).toHaveLength(selected.length)
+    for (const phase of PHASE_IDS) {
+      expect(discovered.filter((test) => test.phase === phase)).toEqual(selected.filter((test) => test.phase === phase))
     }
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
   }
-)
+})

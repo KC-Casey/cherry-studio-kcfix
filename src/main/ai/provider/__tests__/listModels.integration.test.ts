@@ -263,6 +263,7 @@ describe('listModels - structured provider metadata', () => {
       id: 'openrouter',
       endpointConfigs: {
         [ENDPOINT_TYPE.OPENAI_CHAT_COMPLETIONS]: {
+          baseUrl: 'https://openrouter.ai/api/v1/',
           modelsApiUrls: {
             default: `${root}/models`,
             embedding: `${root}/embedding`,
@@ -332,6 +333,7 @@ describe('listModels - structured provider metadata', () => {
       presetProviderId: 'openrouter',
       endpointConfigs: {
         [ENDPOINT_TYPE.OPENAI_CHAT_COMPLETIONS]: {
+          baseUrl: 'https://openrouter.ai/api/v1/',
           modelsApiUrls: {
             default: `${root}/models`,
             embedding: `${root}/embedding`,
@@ -365,4 +367,55 @@ describe('listModels - structured provider metadata', () => {
       expect(model.maxOutputTokens).toBeUndefined()
     }
   })
+
+  it.each(['openrouter', 'copied-openrouter'])(
+    'keeps %s discovery and its key on the configured destination',
+    async (id) => {
+      const received: Array<{ path: string | undefined; authorization: string | undefined }> = []
+      const port = await listen(
+        createServer((request, response) => {
+          received.push({ path: request.url, authorization: request.headers.authorization })
+          response.setHeader('content-type', 'application/json')
+          response.end(JSON.stringify({ data: [{ id: 'gateway/model', name: 'Gateway model' }] }))
+        })
+      )
+      const baseUrl = `http://127.0.0.1:${port}/gateway/v2`
+      const originalFetch = globalThis.fetch
+      const requestedUrls: string[] = []
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+        const url = input instanceof Request ? input.url : String(input)
+        requestedUrls.push(url)
+        if (url !== `${baseUrl}/models`) throw new Error('Discovery attempted an unrelated destination')
+        return originalFetch(input, init)
+      })
+      getRotatedApiKeyMock.mockReturnValue('copied-provider-test-key')
+      const provider = makeProvider({
+        id,
+        presetProviderId: 'openrouter',
+        defaultChatEndpoint: ENDPOINT_TYPE.OPENAI_CHAT_COMPLETIONS,
+        endpointConfigs: {
+          [ENDPOINT_TYPE.OPENAI_CHAT_COMPLETIONS]: {
+            baseUrl,
+            modelsApiUrls: {
+              default: 'https://openrouter.ai/api/v1/models',
+              embedding: 'https://openrouter.ai/api/v1/embeddings/models',
+              image: 'https://openrouter.ai/api/v1/images/models',
+              reranker: 'https://openrouter.ai/api/v1/models?output_modalities=rerank'
+            }
+          }
+        }
+      })
+
+      try {
+        const { models } = await listModels(provider, undefined, { throwOnError: true })
+        expect(models).toMatchObject([
+          { id: `${id}::gateway/model`, apiModelId: 'gateway/model', name: 'Gateway model' }
+        ])
+        expect(requestedUrls).toEqual([`${baseUrl}/models`])
+        expect(received).toEqual([{ path: '/gateway/v2/models', authorization: 'Bearer copied-provider-test-key' }])
+      } finally {
+        fetchSpy.mockRestore()
+      }
+    }
+  )
 })

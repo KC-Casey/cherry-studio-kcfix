@@ -235,6 +235,13 @@ export const REGRESSION_CASES = [
     capabilities: []
   },
   {
+    id: 'P-03',
+    title: 'Restore model catalog defaults without losing explicit settings or edit drafts',
+    tasks: ['paintings', 'painting-workbench'],
+    phase: 'images',
+    capabilities: []
+  },
+  {
     id: 'MP-90',
     title: 'Enlarge, preview, and save images',
     tasks: ['paintings'],

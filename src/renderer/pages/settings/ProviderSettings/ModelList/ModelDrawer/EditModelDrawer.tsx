@@ -79,13 +79,17 @@ export default function EditModelDrawer({ providerId, open, model: modelProp, on
   const { provider } = useProvider(providerId)
   const { updateModel } = useModelMutations()
   const [modelIdCopied, copyModelId] = useCopyToClipboard()
+  const [restoredSnapshot, setRestoredSnapshot] = useState<{ source: Model; model: Model } | null>(null)
+  const suppliedModel = restoredSnapshot?.source === modelProp ? restoredSnapshot.model : modelProp
+  const selectionRef = useRef({ model: modelProp, open })
+  selectionRef.current = { model: modelProp, open }
   // Keep the last opened model around so `PageSidePanel`'s exit animation has stable content
   // after the parent clears its `editingModel` selection on close.
-  const previousModelRef = useRef<Model | null>(modelProp)
-  if (modelProp) {
-    previousModelRef.current = modelProp
+  const previousModelRef = useRef<Model | null>(suppliedModel)
+  if (suppliedModel) {
+    previousModelRef.current = suppliedModel
   }
-  const model = modelProp ?? previousModelRef.current
+  const model = suppliedModel ?? previousModelRef.current
   const [name, setName] = useState('')
   const [group, setGroup] = useState('')
   const [endpointTypes, setEndpointTypes] = useState<EndpointType[]>([])
@@ -301,7 +305,7 @@ export default function EditModelDrawer({ providerId, open, model: modelProp, on
   )
 
   const restoreCatalogDefaults = useCallback(async () => {
-    if (!model) return
+    if (!model || !modelProp) return
     setRestoringCatalog(true)
     const { modelId } = parseUniqueModelId(model.id)
     try {
@@ -315,14 +319,14 @@ export default function EditModelDrawer({ providerId, open, model: modelProp, on
         })
         void processAutoSaveQueue()
       })
-      if (previousModelRef.current?.id === model.id) {
-        setFormValues(restored)
+      if (selectionRef.current.open && selectionRef.current.model === modelProp) {
+        setRestoredSnapshot({ source: modelProp, model: restored })
         setPricingRevision((revision) => revision + 1)
       }
     } finally {
       setRestoringCatalog(false)
     }
-  }, [model, processAutoSaveQueue, setFormValues])
+  }, [model, modelProp, processAutoSaveQueue])
 
   const commitClassification = useCallback(
     (next: ModelClassificationState) => {

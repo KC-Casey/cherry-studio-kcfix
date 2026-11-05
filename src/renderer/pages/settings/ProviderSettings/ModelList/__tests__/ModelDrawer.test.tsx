@@ -151,10 +151,10 @@ describe('Model drawers', () => {
         providerId: 'openai',
         modelId: 'alpha-model',
         name: 'Alpha Model',
-        group: 'Alpha',
-        endpointTypes: undefined
+        group: 'Alpha'
       })
     )
+    expect(createModelMock.mock.calls[0][0]).not.toHaveProperty('endpointTypes')
     expect(createModelMock.mock.calls[0][0]).not.toHaveProperty('inputModalities')
     expect(onSuccess).toHaveBeenCalledWith(['openai::alpha-model'])
     expect(onClose).toHaveBeenCalledTimes(1)
@@ -208,7 +208,8 @@ describe('Model drawers', () => {
     )
   })
 
-  it('atomically maps a custom model to image editing from the purpose surface', async () => {
+  it('maps a custom model to image editing without dropping an explicit extra capability', async () => {
+    const user = userEvent.setup()
     useProviderMock.mockReturnValue({
       provider: {
         id: 'custom-provider',
@@ -222,28 +223,25 @@ describe('Model drawers', () => {
 
     render(<AddModelDrawer providerId="custom-provider" open prefill={null} onClose={vi.fn()} />)
 
-    fireEvent.click(screen.getByRole('radio', { name: /settings\.models\.add\.purpose\.image_edit\.label/ }))
-    fireEvent.change(screen.getByLabelText('settings.models.add.model_id.label'), {
-      target: { value: 'image-editor' }
-    })
-
-    await act(async () => {
-      fireEvent.submit(screen.getByTestId('provider-settings-model-add-drawer-content'))
-    })
+    await user.click(screen.getByRole('radio', { name: /settings\.models\.add\.purpose\.image_edit\.label/ }))
+    await user.type(screen.getByLabelText('settings.models.add.model_id.label'), 'image-editor')
+    await user.click(screen.getByRole('button', { name: 'settings.moresetting.label' }))
+    await user.click(screen.getByRole('button', { name: 'models.type.reasoning' }))
+    await user.click(screen.getByRole('button', { name: 'settings.models.add.add_model' }))
 
     expect(createModelMock).toHaveBeenCalledWith(
       expect.objectContaining({
         providerId: 'custom-provider',
         modelId: 'image-editor',
         endpointTypes: [ENDPOINT_TYPE.OPENAI_IMAGE_EDIT],
-        capabilities: [MODEL_CAPABILITY.IMAGE_GENERATION],
+        capabilities: [MODEL_CAPABILITY.IMAGE_GENERATION, MODEL_CAPABILITY.REASONING],
         inputModalities: [MODALITY.IMAGE],
         outputModalities: [MODALITY.IMAGE]
       })
     )
   })
 
-  it('adds a custom chat model without purpose choices in the simplified flow', async () => {
+  it('inherits the provider route for an untouched custom model in the simplified flow', async () => {
     const user = userEvent.setup()
     useProviderMock.mockReturnValue({
       provider: {
@@ -267,11 +265,100 @@ describe('Model drawers', () => {
     expect(createModelMock).toHaveBeenCalledWith(
       expect.objectContaining({
         providerId: 'custom-provider',
-        modelId: 'chat-model',
-        endpointTypes: [ENDPOINT_TYPE.ANTHROPIC_MESSAGES]
+        modelId: 'chat-model'
       })
     )
+    for (const key of ['endpointTypes', 'capabilities', 'inputModalities', 'outputModalities']) {
+      expect(createModelMock.mock.calls[0][0]).not.toHaveProperty(key)
+    }
   })
+
+  it.each(['openai', 'custom-provider', 'new-api'])(
+    'leaves ID-only catalog classification and routes unoverridden for %s',
+    async (providerId) => {
+      const user = userEvent.setup()
+      useProviderMock.mockReturnValue({
+        provider: {
+          id: providerId,
+          name: 'Catalog test provider',
+          defaultChatEndpoint: ENDPOINT_TYPE.ANTHROPIC_MESSAGES,
+          endpointConfigs: { [ENDPOINT_TYPE.ANTHROPIC_MESSAGES]: { baseUrl: 'https://api.example.com' } }
+        }
+      })
+      render(<AddModelDrawer providerId={providerId} open prefill={null} onClose={vi.fn()} />)
+      await user.type(screen.getByLabelText('settings.models.add.model_id.label'), 'gpt-image-2.6-flare')
+      await user.click(screen.getByRole('button', { name: 'settings.models.add.add_model' }))
+
+      expect(createModelMock).toHaveBeenCalledWith(
+        expect.objectContaining({ providerId, modelId: 'gpt-image-2.6-flare' })
+      )
+      for (const key of ['capabilities', 'inputModalities', 'outputModalities', 'endpointTypes']) {
+        expect(createModelMock.mock.calls[0][0], `${key} must come from the catalog or provider`).not.toHaveProperty(
+          key
+        )
+      }
+    }
+  )
+
+  it.each([
+    ['models.type.reasoning', 'models.type.reasoning'],
+    ['models.type.image', 'models.type.text']
+  ])('keeps an explicit empty capability override after selecting %s then %s', async (first, second) => {
+    const user = userEvent.setup()
+    useProviderMock.mockReturnValue({ provider: { id: 'openai', name: 'OpenAI' } })
+    render(<AddModelDrawer providerId="openai" open prefill={null} onClose={vi.fn()} />)
+    await user.type(screen.getByLabelText('settings.models.add.model_id.label'), 'gpt-image-2.6-flare')
+    await user.click(screen.getByRole('button', { name: 'settings.moresetting.label' }))
+    await user.click(screen.getByRole('button', { name: first }))
+    await user.click(screen.getByRole('button', { name: second }))
+    await user.click(screen.getByRole('button', { name: 'settings.models.add.add_model' }))
+
+    expect(createModelMock).toHaveBeenCalledWith(expect.objectContaining({ capabilities: [] }))
+    expect(createModelMock.mock.calls[0][0]).not.toHaveProperty('inputModalities')
+  })
+
+  it.each([
+    { capabilities: [] },
+    { capabilities: [MODEL_CAPABILITY.IMAGE_RECOGNITION, MODEL_CAPABILITY.IMAGE_GENERATION] }
+  ])(
+    'preserves prefilled $capabilities, empty modalities and an explicit route without touching the controls',
+    async ({ capabilities }) => {
+      const user = userEvent.setup()
+      useProviderMock.mockReturnValue({ provider: { id: 'openai', name: 'OpenAI' } })
+      render(
+        <AddModelDrawer
+          providerId="openai"
+          open
+          onClose={vi.fn()}
+          prefill={{
+            model: {
+              id: 'openai::prefilled-model',
+              supportsStreaming: true,
+              providerId: 'openai',
+              apiModelId: 'prefilled-model',
+              name: 'Prefilled model',
+              capabilities,
+              inputModalities: [],
+              outputModalities: [],
+              endpointTypes: [ENDPOINT_TYPE.OPENAI_RESPONSES],
+              isEnabled: true,
+              isHidden: false
+            }
+          }}
+        />
+      )
+      await user.click(screen.getByRole('button', { name: 'settings.models.add.add_model' }))
+
+      expect(createModelMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          capabilities,
+          inputModalities: [],
+          outputModalities: [],
+          endpointTypes: [ENDPOINT_TYPE.OPENAI_RESPONSES]
+        })
+      )
+    }
+  )
 
   it('saves independent model type, capability, and input-modality selections when adding', async () => {
     useProviderMock.mockReturnValue({
@@ -300,26 +387,28 @@ describe('Model drawers', () => {
     )
   })
 
-  it('preserves an explicitly emptied input-modality selection when adding', async () => {
-    useProviderMock.mockReturnValue({
-      provider: { id: 'openai', name: 'OpenAI' }
-    })
+  it.each([true, false])(
+    'saves an unknown model with explicit Vision=%s independently of capabilities',
+    async (enabled) => {
+      const user = userEvent.setup()
+      useProviderMock.mockReturnValue({
+        provider: { id: 'openai', name: 'OpenAI' }
+      })
 
-    render(<AddModelDrawer providerId="openai" open prefill={null} onClose={vi.fn()} />)
+      render(<AddModelDrawer providerId="openai" open prefill={null} onClose={vi.fn()} />)
 
-    fireEvent.change(screen.getByLabelText('settings.models.add.model_id.label'), {
-      target: { value: 'explicit-text-model' }
-    })
-    fireEvent.click(screen.getByRole('button', { name: 'settings.moresetting.label' }))
-    fireEvent.click(screen.getByRole('button', { name: 'models.type.audio' }))
-    fireEvent.click(screen.getByRole('button', { name: 'models.type.audio' }))
+      await user.type(screen.getByLabelText('settings.models.add.model_id.label'), 'unknown-custom-model')
+      await user.click(screen.getByRole('button', { name: 'settings.moresetting.label' }))
+      await user.click(screen.getByRole('button', { name: 'models.type.vision' }))
+      if (!enabled) await user.click(screen.getByRole('button', { name: 'models.type.vision' }))
+      await user.click(screen.getByRole('button', { name: 'settings.models.add.add_model' }))
 
-    await act(async () => {
-      fireEvent.submit(screen.getByTestId('provider-settings-model-add-drawer-content'))
-    })
-
-    expect(createModelMock).toHaveBeenCalledWith(expect.objectContaining({ inputModalities: [] }))
-  })
+      expect(createModelMock).toHaveBeenCalledWith(
+        expect.objectContaining({ inputModalities: enabled ? [MODALITY.IMAGE] : [] })
+      )
+      expect(createModelMock.mock.calls[0][0]).not.toHaveProperty('capabilities')
+    }
+  )
 
   it('keeps the add-model submit disabled while creating and shows one inline error on failure', async () => {
     useProviderMock.mockReturnValue({
