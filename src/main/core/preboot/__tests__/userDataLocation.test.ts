@@ -172,6 +172,16 @@ afterEach(() => {
 })
 
 describe('getNormalizedExecutablePath', () => {
+  it('directory portable keeps the legacy stable mapping key without launcher environment', async () => {
+    vi.stubEnv('PORTABLE_EXECUTABLE_DIR', undefined)
+    stubConstants({ isLinux: false, isWin: true, isPortable: true })
+    stubElectron({ exePath: resolvePath('/portable/便携程序/cherry-studio-kcfix.exe') })
+    stubBootConfig()
+    stubFs()
+    const { getNormalizedExecutablePath } = await loadModule()
+    expect(getNormalizedExecutablePath()).toBe(resolvePath('/portable/便携程序/cherry-studio-portable.exe'))
+  })
+
   it('macOS: returns app.getPath("exe") verbatim', async () => {
     stubConstants({ isLinux: false, isWin: false, isPortable: false })
     stubElectron({ exePath: resolvePath('/Applications/Cherry Studio.app/Contents/MacOS/Cherry Studio') })
@@ -286,6 +296,35 @@ describe('isUsableDataDir', () => {
 })
 
 describe('resolveUserDataLocation', () => {
+  it('directory portable stores its profile beside the executable, not under the executable file', async () => {
+    vi.stubEnv('PORTABLE_EXECUTABLE_DIR', undefined)
+    stubConstants({ isLinux: false, isWin: true, isPortable: true })
+    stubElectron({ exePath: resolvePath('/portable/便携程序 with spaces/cherry-studio-kcfix.exe') })
+    stubBootConfig()
+    stubFs()
+    const { resolveUserDataLocation } = await loadModule()
+    resolveUserDataLocation()
+    expect(setPathMock).toHaveBeenCalledWith('userData', resolvePath('/portable/便携程序 with spaces/data'))
+  })
+
+  it('directory portable preserves an existing custom data mapping without copying or changing it', async () => {
+    vi.stubEnv('PORTABLE_EXECUTABLE_DIR', undefined)
+    stubConstants({ isLinux: false, isWin: true, isPortable: true })
+    stubElectron({ exePath: resolvePath('/portable/app/cherry-studio-kcfix.exe') })
+    const store = stubBootConfig({
+      'app.user_data_path': { [resolvePath('/portable/app/cherry-studio-portable.exe')]: resolvePath('/separate/data') }
+    })
+    stubFs()
+    const { resolveUserDataLocation } = await loadModule()
+    resolveUserDataLocation()
+    expect(setPathMock).toHaveBeenCalledWith('userData', resolvePath('/separate/data'))
+    expect(store['app.user_data_path']).toEqual({
+      [resolvePath('/portable/app/cherry-studio-portable.exe')]: resolvePath('/separate/data')
+    })
+    expect(cpSyncMock).not.toHaveBeenCalled()
+    expect(bootConfigSetMock).not.toHaveBeenCalled()
+  })
+
   describe('normal resolution (no pending relocation)', () => {
     it('app.isPackaged=false: appends Dev suffix and ignores BootConfig', async () => {
       stubConstants({ isLinux: false, isWin: false, isPortable: false })

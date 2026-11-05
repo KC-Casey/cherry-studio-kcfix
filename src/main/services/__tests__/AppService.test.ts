@@ -305,6 +305,19 @@ describe('AppService', () => {
       expect(setLoginItemSettingsMock).toHaveBeenCalledWith({ openAtLogin: false })
     })
 
+    it('registers the real executable for directory portable builds without launcher environment', async () => {
+      platform.isPortable = true
+      vi.stubEnv('PORTABLE_EXECUTABLE_FILE', undefined)
+
+      await new AppService().setAppLaunchOnBoot(true)
+
+      expect(setLoginItemSettingsMock).toHaveBeenCalledWith({
+        openAtLogin: true,
+        path: resolvePath('/mock/app.exe_file'),
+        args: []
+      })
+    })
+
     it('uses Electron defaults on macOS', async () => {
       platform.isMac = true
       platform.isWin = false

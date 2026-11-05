@@ -59,10 +59,9 @@ export class AppService extends BaseService {
     if (isWin || isMac) {
       const settings: Parameters<typeof app.setLoginItemSettings>[0] = { openAtLogin: isLaunchOnBoot }
 
-      // electron-builder's portable launcher sets this to its stable source path.
-      // process.execPath points at the extracted Temp payload and becomes stale.
-      if (isWin && isPortable && process.env.PORTABLE_EXECUTABLE_FILE) {
-        settings.path = process.env.PORTABLE_EXECUTABLE_FILE
+      // NSIS needs its stable launcher; directory portable builds run the actual executable.
+      if (isWin && isPortable) {
+        settings.path = process.env.PORTABLE_EXECUTABLE_FILE || application.getPath('app.exe_file')
         settings.args = []
       }
 

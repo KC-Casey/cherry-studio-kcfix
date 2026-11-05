@@ -22,7 +22,7 @@ export function getNormalizedExecutablePath(): string {
     return path.join(path.dirname(process.env.APPIMAGE), 'cherry-studio.appimage')
   }
   if (isWin && isPortable) {
-    return path.join(process.env.PORTABLE_EXECUTABLE_DIR || '', 'cherry-studio-portable.exe')
+    return path.join(process.env.PORTABLE_EXECUTABLE_DIR || path.dirname(app.getPath('exe')), 'cherry-studio-portable.exe')
   }
   return app.getPath('exe')
 }
@@ -72,7 +72,7 @@ export function resolveUserDataLocation(): void {
 
   if (isPortable) {
     const portableDir = process.env.PORTABLE_EXECUTABLE_DIR
-    const portablePath = path.join(portableDir || app.getPath('exe'), 'data')
+    const portablePath = path.join(portableDir || path.dirname(app.getPath('exe')), 'data')
     app.setPath('userData', portablePath)
     logger.info('userData set for portable build', { portablePath })
   }

@@ -426,7 +426,7 @@ export class Application {
 
     if (isWin && isPortable) {
       options = options || {}
-      options.execPath = process.env.PORTABLE_EXECUTABLE_FILE
+      options.execPath = process.env.PORTABLE_EXECUTABLE_FILE || this.getPath('app.exe_file')
       options.args = options.args || []
     }
 
