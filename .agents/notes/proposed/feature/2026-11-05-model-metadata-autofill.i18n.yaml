@@ -1,0 +1,5 @@
+# Bilingual-pair consistency record (docs/dev/i18n/README.md).
+# After editing either side, update its counterpart and re-record with:
+#   pnpm docs:check-pairing --write .agents/notes/proposed/feature/2026-11-05-model-metadata-autofill.md
+2026-11-05-model-metadata-autofill.md: 32f6db01c74be0a38ec584053c34d68f293c0842
+2026-11-05-model-metadata-autofill.zh.md: f0421e4f2cd9019d485fa5ea04bf992bb4537436

@@ -25,6 +25,7 @@ import {
   getModelApiId
 } from './helpers'
 import { ModelBasicFields } from './ModelBasicFields'
+import { ModelCatalogDefaults } from './ModelCatalogDefaults'
 import { ModelClassificationControls } from './ModelClassificationControls'
 import { ModelContextWindowFields } from './ModelContextWindowFields'
 import { ModelPricingFields } from './ModelPricingFields'
@@ -69,6 +70,8 @@ interface AutoSaveQueueItem {
   providerId: string
   modelId: string
   patch: UpdateModelDto
+  resolve?: (model: Model) => void
+  reject?: (error: unknown) => void
 }
 
 export default function EditModelDrawer({ providerId, open, model: modelProp, onClose }: EditModelDrawerProps) {
@@ -95,6 +98,8 @@ export default function EditModelDrawer({ providerId, open, model: modelProp, on
   const [maxOutputTokens, setMaxOutputTokens] = useState<number | null>(null)
   const [pricing, setPricing] = useState<Model['pricing']>()
   const [initializedModel, setInitializedModel] = useState<Model | null>(null)
+  const [restoringCatalog, setRestoringCatalog] = useState(false)
+  const [pricingRevision, setPricingRevision] = useState(0)
   const autoSavePendingItemsRef = useRef(new Map<string, AutoSaveQueueItem>())
   const autoSaveRunningRef = useRef(false)
 
@@ -107,11 +112,7 @@ export default function EditModelDrawer({ providerId, open, model: modelProp, on
   const savedClassification = useMemo(() => getInitialModelClassification(model), [model])
   const hasClassificationChanges = !areModelClassificationsEqual(classification, savedClassification)
 
-  useLayoutEffect(() => {
-    if (!open || !model) {
-      return
-    }
-
+  const setFormValues = useCallback((model: Model) => {
     setName(model.name)
     setGroup(model.group ?? '')
     setEndpointTypes(model.endpointTypes?.length ? [...model.endpointTypes] : [])
@@ -128,12 +129,17 @@ export default function EditModelDrawer({ providerId, open, model: modelProp, on
     setMaxInputTokens(model.maxInputTokens ?? null)
     setMaxOutputTokens(model.maxOutputTokens ?? null)
     setPricing(model.pricing)
+  }, [])
+
+  useLayoutEffect(() => {
+    if (!open || !model) return
+    setFormValues(model)
     setInitializedModel(model)
-  }, [model, open])
+  }, [model, open, setFormValues])
 
   const handleUpdateModel = useCallback(
     async ({ providerId, modelId, patch }: AutoSaveQueueItem) => {
-      await updateModel(providerId, modelId, patch)
+      return await updateModel(providerId, modelId, patch)
     },
     [updateModel]
   )
@@ -239,15 +245,23 @@ export default function EditModelDrawer({ providerId, open, model: modelProp, on
     }
 
     autoSaveRunningRef.current = true
+    const failedModels = new Set<string>()
     try {
       while (autoSavePendingItemsRef.current.size > 0) {
         const [key, item] = autoSavePendingItemsRef.current.entries().next().value!
         autoSavePendingItemsRef.current.delete(key)
 
         try {
-          await handleUpdateModel(item)
-        } catch {
-          toast.error(t('common.error'))
+          const identity = `${item.providerId}/${item.modelId}`
+          if (item.patch.restoreCatalogDefaults && failedModels.has(identity)) {
+            throw new Error('An earlier model edit failed')
+          }
+          const updated = await handleUpdateModel(item)
+          item.resolve?.(updated)
+        } catch (error) {
+          failedModels.add(`${item.providerId}/${item.modelId}`)
+          if (item.reject) item.reject(error)
+          else toast.error(t('common.error'))
         }
       }
     } finally {
@@ -285,6 +299,30 @@ export default function EditModelDrawer({ providerId, open, model: modelProp, on
     },
     [autoSave]
   )
+
+  const restoreCatalogDefaults = useCallback(async () => {
+    if (!model) return
+    setRestoringCatalog(true)
+    const { modelId } = parseUniqueModelId(model.id)
+    try {
+      const restored = await new Promise<Model>((resolve, reject) => {
+        autoSavePendingItemsRef.current.set(`${model.providerId}/${modelId}/catalog`, {
+          providerId: model.providerId,
+          modelId,
+          patch: { restoreCatalogDefaults: true },
+          resolve,
+          reject
+        })
+        void processAutoSaveQueue()
+      })
+      if (previousModelRef.current?.id === model.id) {
+        setFormValues(restored)
+        setPricingRevision((revision) => revision + 1)
+      }
+    } finally {
+      setRestoringCatalog(false)
+    }
+  }, [model, processAutoSaveQueue, setFormValues])
 
   const commitClassification = useCallback(
     (next: ModelClassificationState) => {
@@ -352,162 +390,171 @@ export default function EditModelDrawer({ providerId, open, model: modelProp, on
         data-testid="provider-settings-model-edit-drawer-content"
         className="flex min-h-0 flex-col gap-4 py-0"
         onSubmit={(event) => event.preventDefault()}>
-        <ProviderSection className={drawerClasses.section}>
-          <div className={drawerClasses.fieldList}>
-            <ModelBasicFields
-              values={{
-                modelId: apiModelId,
-                name,
-                group,
-                contextWindow,
-                maxInputTokens,
-                maxOutputTokens,
-                endpointTypes
-              }}
-              showEndpointType={mode === 'endpoint-types'}
-              endpointTypeControl="chips"
-              modelIdDisabled
-              modelIdAction={
-                <button
-                  type="button"
-                  aria-label={t('message.copied')}
-                  className={fieldClasses.inputActionButton}
-                  onClick={() => {
-                    void copyModelId(apiModelId)
-                  }}>
-                  {modelIdCopied ? <Check size={14} className="text-success" /> : <CopyIcon size={14} />}
-                </button>
-              }
-              onModelIdChange={(value) => {
-                setName(value)
-                setGroup(getDefaultGroupName(value))
-              }}
-              onNameChange={setName}
-              onNameBlur={() => autoSave({ name })}
-              onGroupChange={setGroup}
-              onGroupBlur={() => autoSave({ group })}
-              onEndpointTypesChange={(next) => {
-                const nextEndpointTypes = [...next]
-                setEndpointTypes(nextEndpointTypes)
-                autoSave({ endpointTypes: nextEndpointTypes })
-              }}
-            />
-            {mode === 'purpose' && (
-              <ModelPurposeFieldsControl
-                purpose={modelPurpose}
-                chatEndpointType={chatEndpointType}
-                chatEndpointTypes={providerChatEndpointTypes}
-                onPurposeChange={(nextPurpose) => {
-                  const nextPurposeFields = applyModelPurpose(purposeFields, nextPurpose, {
-                    previousPurpose: modelPurpose,
-                    chatEndpointType
-                  })
-                  const nextClassification = {
-                    ...classification,
-                    primaryType:
-                      nextPurpose === 'chat'
-                        ? classification.primaryType === 'image'
-                          ? ('text' as const)
-                          : classification.primaryType
-                        : ('image' as const)
-                  }
-                  setPurposeFields(nextPurposeFields)
-                  setEndpointTypes(nextPurposeFields.endpointTypes)
-                  setClassification(nextClassification)
-                  autoSave({ purposeFields: nextPurposeFields, classification: nextClassification })
+        <fieldset disabled={restoringCatalog} className="contents">
+          <ProviderSection className={drawerClasses.section}>
+            <div className={drawerClasses.fieldList}>
+              <ModelBasicFields
+                values={{
+                  modelId: apiModelId,
+                  name,
+                  group,
+                  contextWindow,
+                  maxInputTokens,
+                  maxOutputTokens,
+                  endpointTypes
                 }}
-                onChatEndpointTypeChange={(nextEndpointType) => {
-                  const nextPurposeFields = applyModelPurpose(purposeFields, 'chat', {
-                    previousPurpose: modelPurpose,
-                    chatEndpointType: nextEndpointType
-                  })
-                  setPurposeFields(nextPurposeFields)
-                  setEndpointTypes(nextPurposeFields.endpointTypes)
-                  autoSave({ purposeFields: nextPurposeFields })
+                showEndpointType={mode === 'endpoint-types'}
+                endpointTypeControl="chips"
+                modelIdDisabled
+                modelIdAction={
+                  <button
+                    type="button"
+                    aria-label={t('message.copied')}
+                    className={fieldClasses.inputActionButton}
+                    onClick={() => {
+                      void copyModelId(apiModelId)
+                    }}>
+                    {modelIdCopied ? <Check size={14} className="text-success" /> : <CopyIcon size={14} />}
+                  </button>
+                }
+                onModelIdChange={(value) => {
+                  setName(value)
+                  setGroup(getDefaultGroupName(value))
+                }}
+                onNameChange={setName}
+                onNameBlur={() => autoSave({ name })}
+                onGroupChange={setGroup}
+                onGroupBlur={() => autoSave({ group })}
+                onEndpointTypesChange={(next) => {
+                  const nextEndpointTypes = [...next]
+                  setEndpointTypes(nextEndpointTypes)
+                  autoSave({ endpointTypes: nextEndpointTypes })
                 }}
               />
-            )}
-          </div>
-        </ProviderSection>
-
-        <ProviderActions>
-          <Button
-            type="button"
-            variant="ghost"
-            className={drawerClasses.toggleButton}
-            onClick={() => setShowMoreSettings((current) => !current)}>
-            {t('settings.moresetting.label')}
-            {showMoreSettings ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-          </Button>
-        </ProviderActions>
-
-        {showMoreSettings && (
-          <ProviderSection className={drawerClasses.section}>
-            <div data-testid="provider-settings-model-more-settings" className="space-y-4">
-              <div className={drawerClasses.sectionCard}>
-                <ModelClassificationControls
-                  value={classification}
-                  hasChanges={hasClassificationChanges}
-                  onPrimaryTypeChange={handlePrimaryTypeChange}
-                  onCapabilityToggle={handleToggleCapability}
-                  onInputModalityToggle={handleToggleInputModality}
-                  onReset={handleResetClassification}
+              {mode === 'purpose' && (
+                <ModelPurposeFieldsControl
+                  purpose={modelPurpose}
+                  chatEndpointType={chatEndpointType}
+                  chatEndpointTypes={providerChatEndpointTypes}
+                  onPurposeChange={(nextPurpose) => {
+                    const nextPurposeFields = applyModelPurpose(purposeFields, nextPurpose, {
+                      previousPurpose: modelPurpose,
+                      chatEndpointType
+                    })
+                    const nextClassification = {
+                      ...classification,
+                      primaryType:
+                        nextPurpose === 'chat'
+                          ? classification.primaryType === 'image'
+                            ? ('text' as const)
+                            : classification.primaryType
+                          : ('image' as const)
+                    }
+                    setPurposeFields(nextPurposeFields)
+                    setEndpointTypes(nextPurposeFields.endpointTypes)
+                    setClassification(nextClassification)
+                    autoSave({ purposeFields: nextPurposeFields, classification: nextClassification })
+                  }}
+                  onChatEndpointTypeChange={(nextEndpointType) => {
+                    const nextPurposeFields = applyModelPurpose(purposeFields, 'chat', {
+                      previousPurpose: modelPurpose,
+                      chatEndpointType: nextEndpointType
+                    })
+                    setPurposeFields(nextPurposeFields)
+                    setEndpointTypes(nextPurposeFields.endpointTypes)
+                    autoSave({ purposeFields: nextPurposeFields })
+                  }}
                 />
-                <ProviderHelpText className="mt-2">
-                  {t('settings.models.edit.classification_save_hint')}
-                </ProviderHelpText>
-              </div>
+              )}
+            </div>
+          </ProviderSection>
 
-              <div className={drawerClasses.sectionCard}>
-                <ModelContextWindowFields
-                  contextWindow={contextWindow}
-                  maxInputTokens={maxInputTokens}
-                  maxOutputTokens={maxOutputTokens}
-                  onContextWindowChange={setContextWindow}
-                  // The committed value is passed through rather than read back
-                  // from state, which has not re-rendered yet at this point.
-                  onContextWindowCommit={(contextWindow) => autoSave({ contextWindow })}
-                  onMaxInputTokensChange={setMaxInputTokens}
-                  onMaxInputTokensCommit={(maxInputTokens) => autoSave({ maxInputTokens })}
-                  onMaxOutputTokensChange={setMaxOutputTokens}
-                  onMaxOutputTokensCommit={(maxOutputTokens) => autoSave({ maxOutputTokens })}
+          <ProviderActions>
+            <Button
+              type="button"
+              variant="ghost"
+              className={drawerClasses.toggleButton}
+              onClick={() => setShowMoreSettings((current) => !current)}>
+              {t('settings.moresetting.label')}
+              {showMoreSettings ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            </Button>
+          </ProviderActions>
+
+          {showMoreSettings && (
+            <ProviderSection className={drawerClasses.section}>
+              <div data-testid="provider-settings-model-more-settings" className="space-y-4">
+                <ModelCatalogDefaults
+                  model={model}
+                  providerId={providerId}
+                  enabled={open}
+                  busy={restoringCatalog}
+                  onRestore={restoreCatalogDefaults}
                 />
-              </div>
+                <div className={drawerClasses.sectionCard}>
+                  <ModelClassificationControls
+                    value={classification}
+                    hasChanges={hasClassificationChanges}
+                    onPrimaryTypeChange={handlePrimaryTypeChange}
+                    onCapabilityToggle={handleToggleCapability}
+                    onInputModalityToggle={handleToggleInputModality}
+                    onReset={handleResetClassification}
+                  />
+                  <ProviderHelpText className="mt-2">
+                    {t('settings.models.edit.classification_save_hint')}
+                  </ProviderHelpText>
+                </div>
 
-              <div className={drawerClasses.switchCard}>
-                <div className="flex min-w-0 items-center justify-between gap-3">
-                  <div className="flex min-w-0 items-center gap-1.5">
-                    <span className="truncate font-normal text-[13px] text-muted-foreground leading-5">
-                      {t('settings.models.add.supported_text_delta.label')}
-                    </span>
-                    <Tooltip content={t('settings.models.add.supported_text_delta.tooltip')}>
-                      <span className="inline-flex h-5 w-4 shrink-0 items-center justify-center text-muted-foreground">
-                        <CircleHelp aria-hidden className="size-3" />
+                <div className={drawerClasses.sectionCard}>
+                  <ModelContextWindowFields
+                    contextWindow={contextWindow}
+                    maxInputTokens={maxInputTokens}
+                    maxOutputTokens={maxOutputTokens}
+                    onContextWindowChange={setContextWindow}
+                    // The committed value is passed through rather than read back
+                    // from state, which has not re-rendered yet at this point.
+                    onContextWindowCommit={(contextWindow) => autoSave({ contextWindow })}
+                    onMaxInputTokensChange={setMaxInputTokens}
+                    onMaxInputTokensCommit={(maxInputTokens) => autoSave({ maxInputTokens })}
+                    onMaxOutputTokensChange={setMaxOutputTokens}
+                    onMaxOutputTokensCommit={(maxOutputTokens) => autoSave({ maxOutputTokens })}
+                  />
+                </div>
+
+                <div className={drawerClasses.switchCard}>
+                  <div className="flex min-w-0 items-center justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <span className="truncate font-normal text-[13px] text-muted-foreground leading-5">
+                        {t('settings.models.add.supported_text_delta.label')}
                       </span>
-                    </Tooltip>
+                      <Tooltip content={t('settings.models.add.supported_text_delta.tooltip')}>
+                        <span className="inline-flex h-5 w-4 shrink-0 items-center justify-center text-muted-foreground">
+                          <CircleHelp aria-hidden className="size-3" />
+                        </span>
+                      </Tooltip>
+                    </div>
+                    <Switch
+                      size="sm"
+                      aria-label={t('settings.models.add.supported_text_delta.label')}
+                      checked={supportsStreaming ?? false}
+                      onCheckedChange={(checked) => {
+                        setSupportsStreaming(checked)
+                        autoSave({ supportsStreaming: checked })
+                      }}
+                    />
                   </div>
-                  <Switch
-                    size="sm"
-                    aria-label={t('settings.models.add.supported_text_delta.label')}
-                    checked={supportsStreaming ?? false}
-                    onCheckedChange={(checked) => {
-                      setSupportsStreaming(checked)
-                      autoSave({ supportsStreaming: checked })
-                    }}
+                </div>
+
+                <div className={drawerClasses.sectionCard}>
+                  <ModelPricingFields
+                    key={`${providerId}:${model.id}:${pricingRevision}`}
+                    pricing={pricing}
+                    onCommit={handlePricingCommit}
                   />
                 </div>
               </div>
-
-              <div className={drawerClasses.sectionCard}>
-                <ModelPricingFields
-                  key={`${providerId}:${model.id}`}
-                  pricing={pricing}
-                  onCommit={handlePricingCommit}
-                />
-              </div>
-            </div>
-          </ProviderSection>
-        )}
+            </ProviderSection>
+          )}
+        </fieldset>
       </form>
     </ProviderSettingsDrawer>
   )

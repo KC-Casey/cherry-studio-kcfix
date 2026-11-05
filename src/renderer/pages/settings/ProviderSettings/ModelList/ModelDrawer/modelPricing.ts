@@ -49,12 +49,12 @@ function optionalPriceToDraft(price: { perMillionTokens: number | null } | undef
 
 function createTierDraft(
   minInputTokens: number,
-  prices: Pick<ModelPricing, 'input' | 'output' | 'cacheRead' | 'cacheWrite'>
+  prices: Partial<Pick<ModelPricing, 'input' | 'output' | 'cacheRead' | 'cacheWrite'>>
 ): ModelPricingTierDraft {
   return {
     minInputTokens: String(minInputTokens),
-    inputPrice: priceToDraft(prices.input, '0'),
-    outputPrice: priceToDraft(prices.output, '0'),
+    inputPrice: priceToDraft(prices.input, ''),
+    outputPrice: priceToDraft(prices.output, ''),
     cacheReadPrice: optionalPriceToDraft(prices.cacheRead),
     cacheWritePrice: optionalPriceToDraft(prices.cacheWrite)
   }
@@ -62,8 +62,8 @@ function createTierDraft(
 
 export function createModelPricingDraft(pricing: Model['pricing']): ModelPricingDraft {
   const baseTier = createTierDraft(0, {
-    input: pricing?.input ?? { perMillionTokens: 0 },
-    output: pricing?.output ?? { perMillionTokens: 0 },
+    input: pricing?.input,
+    output: pricing?.output,
     cacheRead: pricing?.cacheRead,
     cacheWrite: pricing?.cacheWrite
   })
@@ -153,8 +153,8 @@ export function getModelPricingCurrencySymbol(pricing: Model['pricing']): ModelP
 
 interface ParsedModelPricingTier {
   minInputTokens: number
-  inputPrice: number
-  outputPrice: number
+  inputPrice: number | null
+  outputPrice: number | null
   cacheReadPrice?: number
   cacheWritePrice?: number
 }
@@ -206,8 +206,8 @@ function parseModelPricingDraft(draft: ModelPricingDraft): {
       }
     }
 
-    const inputPrice = parsePrice(tier.inputPrice, false)
-    const outputPrice = parsePrice(tier.outputPrice, false)
+    const inputPrice = parsePrice(tier.inputPrice, true)
+    const outputPrice = parsePrice(tier.outputPrice, true)
     const cacheReadPrice = parsePrice(tier.cacheReadPrice, true)
     const cacheWritePrice = parsePrice(tier.cacheWritePrice, true)
 
@@ -218,8 +218,8 @@ function parseModelPricingDraft(draft: ModelPricingDraft): {
 
     parsedTiers.push({
       minInputTokens,
-      inputPrice: inputPrice.value ?? 0,
-      outputPrice: outputPrice.value ?? 0,
+      inputPrice: inputPrice.value ?? null,
+      outputPrice: outputPrice.value ?? null,
       ...(cacheReadPrice.value !== undefined ? { cacheReadPrice: cacheReadPrice.value } : {}),
       ...(cacheWritePrice.value !== undefined ? { cacheWritePrice: cacheWritePrice.value } : {})
     })
@@ -232,7 +232,7 @@ function parseModelPricingDraft(draft: ModelPricingDraft): {
   return { errors, tiers: parsedTiers }
 }
 
-function createPrice(perMillionTokens: number, currency: Currency) {
+function createPrice(perMillionTokens: number | null, currency: Currency) {
   return { perMillionTokens, currency }
 }
 

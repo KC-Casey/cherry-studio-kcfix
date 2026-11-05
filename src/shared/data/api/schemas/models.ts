@@ -93,6 +93,8 @@ export const UpdateModelSchema = CreateModelSchema.omit({
 })
   .partial()
   .extend({
+    /** Explicitly discard model metadata overrides and follow the current catalog. Must be sent alone. */
+    restoreCatalogDefaults: z.literal(true).optional(),
     /** `null` explicitly clears a stored limit; `undefined` or an absent key leaves it unchanged. */
     contextWindow: PositiveModelTokenLimitSchema.nullable().optional(),
     maxInputTokens: PositiveModelTokenLimitSchema.nullable().optional(),

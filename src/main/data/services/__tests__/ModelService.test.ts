@@ -8,6 +8,7 @@ import { and, eq, or } from 'drizzle-orm'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { application } from '@application'
+import { ModelConfigSchema, type ProtoModelConfig } from '@cherrystudio/provider-registry'
 import { agentTable } from '@data/db/schemas/agent'
 import { knowledgeBaseTable } from '@data/db/schemas/knowledge'
 import { pinTable } from '@data/db/schemas/pin'
@@ -18,7 +19,7 @@ import { pinService } from '@data/services/PinService'
 import type * as ProviderRegistryServiceModule from '@data/services/ProviderRegistryService'
 import { generateOrderKeyBetween, generateOrderKeySequence } from '@data/services/utils/orderKey'
 import { ErrorCode } from '@shared/data/api/errors'
-import { MODELS_DELETE_MAX_IDS, type UpdateModelDto } from '@shared/data/api/schemas/models'
+import { MODELS_DELETE_MAX_IDS, UpdateModelSchema } from '@shared/data/api/schemas/models'
 import {
   CHERRYAI_DEFAULT_MODEL_ID,
   CHERRYAI_DEFAULT_UNIQUE_MODEL_ID,
@@ -142,26 +143,8 @@ describe('user_model delta storage invariant', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('UPDATE_MODEL_FIELD_MAP completeness', () => {
-  it('covers every key in UpdateModelDto', () => {
-    const dtoKeys: (keyof UpdateModelDto)[] = [
-      'name',
-      'description',
-      'group',
-      'capabilities',
-      'inputModalities',
-      'outputModalities',
-      'endpointTypes',
-      'parameterSupport',
-      'supportsStreaming',
-      'contextWindow',
-      'maxInputTokens',
-      'maxOutputTokens',
-      'pricing',
-      'isEnabled',
-      'isHidden',
-      'isDeprecated',
-      'notes'
-    ]
+  it('covers every persisted field in the update schema, excluding the reset command', () => {
+    const dtoKeys = Object.keys(UpdateModelSchema.shape).filter((key) => key !== 'restoreCatalogDefaults')
 
     const mappedDtoKeys = UPDATE_MODEL_FIELD_MAP.map((entry) => (Array.isArray(entry) ? entry[0] : entry))
 
@@ -172,6 +155,287 @@ describe('UPDATE_MODEL_FIELD_MAP completeness', () => {
       expect(dtoKeys, `FIELD_MAP has stale key: "${String(key)}" not in UpdateModelDto`).toContain(key)
     }
   })
+})
+
+describe('ModelService.restoreCatalogDefaults', () => {
+  const dbh = setupTestDatabase()
+  const providerId = 'catalog-alias'
+  const modelId = 'catalog-model-20261105'
+  const uniqueModelId = createUniqueModelId(providerId, modelId)
+  const currentPreset = ModelConfigSchema.parse({
+    id: 'catalog-model',
+    name: 'Catalog Model',
+    capabilities: [MODEL_CAPABILITY.FUNCTION_CALL, MODEL_CAPABILITY.IMAGE_RECOGNITION],
+    inputModalities: ['text', 'image'],
+    outputModalities: ['text'],
+    contextWindow: 128_000,
+    maxInputTokens: 120_000,
+    maxOutputTokens: 8192,
+    parameterSupport: { temperature: { supported: true } },
+    pricing: { input: { perMillionTokens: 2 }, output: { perMillionTokens: 8 } }
+  })
+
+  function setCatalog(presetModel: ProtoModelConfig = currentPreset) {
+    resolveModelMock.mockImplementation((context, rawModelId) => {
+      const matches =
+        context.id === providerId &&
+        context.presetProviderId === 'openai' &&
+        context.defaultChatEndpoint === 'openai-chat-completions' &&
+        rawModelId === modelId
+      return {
+        presetModel: matches ? presetModel : null,
+        registryOverride: matches
+          ? { providerId: 'openai', modelId: presetModel.id, endpointTypes: ['openai-responses'] }
+          : null,
+        reasoningProfile: OPENAI_CHAT_REASONING_PROFILE
+      }
+    })
+  }
+
+  function seedLegacyModel(values: Partial<InsertUserModelRow> = {}) {
+    dbh.db
+      .insert(userProviderTable)
+      .values({
+        ...providerRow(providerId, 'My Provider'),
+        presetProviderId: 'openai',
+        defaultChatEndpoint: 'openai-chat-completions'
+      })
+      .run()
+    dbh.db
+      .insert(userModelTable)
+      .values(
+        modelRow(providerId, modelId, {
+          name: 'My model name',
+          description: 'My description',
+          group: 'My group',
+          capabilities: [],
+          inputModalities: ['text'],
+          inputModalitiesExplicit: true,
+          outputModalities: ['image'],
+          endpointTypes: ['openai-chat-completions'],
+          contextWindow: 4096,
+          maxInputTokens: 3000,
+          maxOutputTokens: 1024,
+          supportsStreaming: false,
+          reasoning: { controls: [{ kind: 'toggle' }] },
+          parameters: { temperature: { supported: false } },
+          pricing: { input: { perMillionTokens: 1 }, output: { perMillionTokens: 3 } },
+          isEnabled: false,
+          isHidden: true,
+          isDeprecated: true,
+          notes: 'Keep these notes',
+          ...values
+        })
+      )
+      .run()
+    setCatalog()
+  }
+
+  function readStoredModel() {
+    return dbh.db.select().from(userModelTable).where(eq(userModelTable.id, uniqueModelId)).get()!
+  }
+
+  it('accepts only an explicit true reset command', () => {
+    expect(UpdateModelSchema.parse({ restoreCatalogDefaults: true })).toEqual({ restoreCatalogDefaults: true })
+    expect(UpdateModelSchema.safeParse({ restoreCatalogDefaults: false }).success).toBe(false)
+  })
+
+  it.each([null, 'old-preset'])('does not silently reset existing rows with preset %s on read', (presetModelId) => {
+    seedLegacyModel({ presetModelId })
+    const before = readStoredModel()
+
+    expect(modelService.list({ providerId })).toMatchObject([
+      {
+        name: 'My model name',
+        capabilities: [],
+        inputModalities: ['text'],
+        outputModalities: ['image'],
+        contextWindow: 4096,
+        maxInputTokens: 3000,
+        maxOutputTokens: 1024,
+        supportsStreaming: false,
+        pricing: { input: { perMillionTokens: 1 }, output: { perMillionTokens: 3 } }
+      }
+    ])
+    expect(readStoredModel()).toEqual(before)
+  })
+
+  it.each([null, 'old-preset'])(
+    'resets metadata only and resolves the current provider-context preset from %s',
+    (presetModelId) => {
+      seedLegacyModel({ presetModelId })
+      const before = readStoredModel()
+
+      const model = modelService.update(providerId, modelId, { restoreCatalogDefaults: true })
+
+      expect(readStoredModel()).toEqual({
+        ...before,
+        presetModelId: 'catalog-model',
+        capabilities: null,
+        inputModalities: null,
+        inputModalitiesExplicit: false,
+        outputModalities: null,
+        contextWindow: null,
+        maxInputTokens: null,
+        maxOutputTokens: null,
+        supportsStreaming: null,
+        reasoning: null,
+        parameters: null,
+        pricing: null,
+        updatedAt: expect.any(Number)
+      })
+      expect(model).toMatchObject({
+        id: uniqueModelId,
+        providerId,
+        apiModelId: modelId,
+        presetModelId: 'catalog-model',
+        name: 'My model name',
+        description: 'My description',
+        group: 'My group',
+        endpointTypes: ['openai-chat-completions'],
+        capabilities: [MODEL_CAPABILITY.FUNCTION_CALL, MODEL_CAPABILITY.IMAGE_RECOGNITION],
+        inputModalities: ['text', 'image'],
+        outputModalities: ['text'],
+        contextWindow: 128_000,
+        maxInputTokens: 120_000,
+        maxOutputTokens: 8192,
+        supportsStreaming: true,
+        parameterSupport: { temperature: { supported: true } },
+        pricing: { input: { perMillionTokens: 2 }, output: { perMillionTokens: 8 } },
+        isEnabled: false,
+        isHidden: true,
+        isDeprecated: true,
+        notes: 'Keep these notes'
+      })
+      expect(model.reasoning).toBeUndefined()
+    }
+  )
+
+  it.each([null, []])(
+    'keeps provider endpoint inheritance for a formerly custom row with endpoints %s',
+    (endpointTypes) => {
+      seedLegacyModel({ endpointTypes })
+
+      const reset = modelService.update(providerId, modelId, { restoreCatalogDefaults: true })
+
+      expect(reset.endpointTypes).toEqual([])
+      expect(readStoredModel().endpointTypes).toEqual([])
+      expect(modelService.update(providerId, modelId, { restoreCatalogDefaults: true }).endpointTypes).toEqual([])
+    }
+  )
+
+  it('keeps preset endpoint inheritance when the existing preset row has no route override', () => {
+    seedLegacyModel({ presetModelId: 'old-preset', endpointTypes: null })
+
+    expect(modelService.update(providerId, modelId, { restoreCatalogDefaults: true }).endpointTypes).toEqual([
+      'openai-responses'
+    ])
+    expect(readStoredModel().endpointTypes).toBeNull()
+  })
+
+  it('leaves unverified limits and pricing unknown rather than retaining stale manual values', () => {
+    seedLegacyModel()
+    setCatalog({ id: 'catalog-model', name: 'Catalog Model' })
+
+    const reset = modelService.update(providerId, modelId, { restoreCatalogDefaults: true })
+
+    expect(reset.contextWindow).toBeUndefined()
+    expect(reset.maxInputTokens).toBeUndefined()
+    expect(reset.maxOutputTokens).toBeUndefined()
+    expect(reset.pricing).toBeUndefined()
+  })
+
+  it('follows later catalog changes while retaining new manual overrides and allows repeat reset', () => {
+    seedLegacyModel()
+    modelService.update(providerId, modelId, { restoreCatalogDefaults: true })
+    setCatalog({ ...currentPreset, contextWindow: 256_000, maxOutputTokens: 16_384 })
+
+    expect(modelService.getByKey(providerId, modelId)).toMatchObject({
+      contextWindow: 256_000,
+      maxOutputTokens: 16_384
+    })
+    modelService.update(providerId, modelId, {
+      contextWindow: 64_000,
+      capabilities: [],
+      inputModalities: [],
+      outputModalities: [],
+      supportsStreaming: false
+    })
+    setCatalog({ ...currentPreset, contextWindow: 512_000, maxOutputTokens: 32_768 })
+
+    expect(modelService.getByKey(providerId, modelId)).toMatchObject({
+      contextWindow: 64_000,
+      maxOutputTokens: 32_768,
+      capabilities: [],
+      inputModalities: [],
+      outputModalities: [],
+      supportsStreaming: false
+    })
+    expect(readStoredModel().inputModalitiesExplicit).toBe(true)
+    const reset = modelService.update(providerId, modelId, { restoreCatalogDefaults: true })
+    expect(reset).toMatchObject({
+      contextWindow: 512_000,
+      maxOutputTokens: 32_768,
+      capabilities: [MODEL_CAPABILITY.FUNCTION_CALL, MODEL_CAPABILITY.IMAGE_RECOGNITION],
+      inputModalities: ['text', 'image'],
+      outputModalities: ['text'],
+      supportsStreaming: true
+    })
+    expect(modelService.update(providerId, modelId, { restoreCatalogDefaults: true })).toEqual(reset)
+  })
+
+  it.each([false, true])(
+    'rejects unavailable presets or provider-only models without changing the row (provider-only %s)',
+    (providerOnly) => {
+      seedLegacyModel()
+      const before = readStoredModel()
+      resolveModelMock.mockReturnValue({
+        presetModel: providerOnly ? currentPreset : null,
+        providerModel: providerOnly ? { id: uniqueModelId } : undefined,
+        registryOverride: null,
+        reasoningProfile: OPENAI_CHAT_REASONING_PROFILE
+      })
+
+      expect(() => modelService.update(providerId, modelId, { restoreCatalogDefaults: true })).toThrow(
+        'no matching catalog preset'
+      )
+      expect(readStoredModel()).toEqual(before)
+    }
+  )
+
+  it('rolls back an earlier reset when a later batch item has no matching catalog preset', () => {
+    seedLegacyModel()
+    dbh.db
+      .insert(userModelTable)
+      .values(
+        modelRow(providerId, 'unknown-model', {
+          orderKey: generateOrderKeyBetween(readStoredModel().orderKey, null)
+        })
+      )
+      .run()
+    const before = dbh.db.select().from(userModelTable).all()
+
+    expect(() =>
+      modelService.bulkUpdate([
+        { providerId, modelId, patch: { restoreCatalogDefaults: true } },
+        { providerId, modelId: 'unknown-model', patch: { restoreCatalogDefaults: true } }
+      ])
+    ).toThrow('no matching catalog preset')
+    expect(dbh.db.select().from(userModelTable).all()).toEqual(before)
+  })
+
+  it.each([{ name: 'Unwanted edit' }, { inputModalities: [] }, { name: undefined }])(
+    'rejects reset combined with another edit %j',
+    (edits) => {
+      seedLegacyModel()
+      const before = readStoredModel()
+
+      expect(() => modelService.update(providerId, modelId, { restoreCatalogDefaults: true, ...edits })).toThrow(
+        'cannot be combined with other edits'
+      )
+      expect(readStoredModel()).toEqual(before)
+    }
+  )
 })
 
 // ─────────────────────────────────────────────────────────────────────────────

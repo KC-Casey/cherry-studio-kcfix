@@ -94,10 +94,28 @@ GET /providers/:providerId/models:resolve?ids=gpt-4o&ids=o3
         → RegistryLoader.findOverride(providerId, modelId)  // O(1)
         → mergePresetModel(preset, override, ...) or createCustomModel(...)
     → Return merged Model[]
-
-SDK only provides model IDs. All other data (capabilities, pricing, etc.)
-comes from the registry — SDK data does not overwrite curated registry data.
 ```
+
+Provider discovery supplies model IDs and selected validated metadata. Curated
+catalog metadata takes precedence over structured provider fallback; subsequent
+manual overrides take precedence over the catalog. Exact catalog entries win
+before the existing normalized lookup fallback. An unfamiliar model name is not
+evidence for inventing capabilities, token limits, or prices.
+
+Gemini listings can supply input/output token limits. OpenRouter listings can
+supply supported input/output modalities, capabilities derived from declared
+modalities and supported parameters, context length, and maximum output tokens.
+Malformed optional metadata is ignored without dropping an otherwise valid ID.
+Provider pricing is not imported by this discovery path, and missing limits or
+prices remain unknown, not zero or free.
+
+Discovery initializes newly added custom models with the supported fields. It
+does not refresh existing user rows or create a separately persisted provider
+snapshot/provenance layer. These initial custom values become ordinary model
+configuration, not a continuously refreshed provider baseline. Catalog-backed
+models retain read-time inheritance rather than persisting discovered limits or
+modalities as user overrides. A catalog describes model support, not guaranteed
+account access or every gateway's supported subset.
 
 ## Merge Functions
 
@@ -148,6 +166,31 @@ freeze catalog values; restoring a value to the baseline clears the column.
 - A column shared by custom and preset rows may therefore be required for
   custom rows while remaining null for preset rows (for example
   `capabilities` and `reasoning`).
+
+### Restore Catalog Defaults
+
+The model editor shows the matched Cherry Studio catalog entry, provider-specific
+catalog overrides, and unpublished limits/pricing. **Use catalog defaults**
+requires explicit confirmation before replacing capabilities, input/output
+modalities, context/input/output token limits, streaming support, parameter
+support, reasoning, and pricing together. Missing catalog values clear previous
+values; an absent price is not a free price.
+
+Restoration is a standalone `restoreCatalogDefaults` PATCH: it cannot be mixed
+with other edits. The service resolves the current catalog inside the write
+transaction, attaches the preset, and clears the listed deltas so subsequent
+reads follow catalog updates. Model identity/API ID, name, description, group,
+endpoints, enabled/hidden/deprecated state, notes, and references remain intact.
+For a custom model without explicit endpoints, restoration preserves provider
+endpoint inheritance instead of adopting the newly attached preset's endpoints.
+
+Cancellation, a catalog read failure, or a missing eligible catalog match does
+not apply the reset. Switching models or closing the editor while confirmation
+is pending cancels that pending restoration. A failed restoration transaction
+does not partially reset the row. The editor serializes restoration after
+pending saves; a preceding save failure prevents the queued reset. Existing
+manual settings are otherwise untouched, and later manual edits can override
+the restored values again.
 
 ## RegistryLoader
 

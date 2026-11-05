@@ -36,6 +36,29 @@ export const OpenAIModelsResponseSchema = z
     }
   })
 
+// Only OpenRouter's documented structured fields are used for discovery.
+// https://openrouter.ai/docs/api/api-reference/models/get-models
+const DiscoveredTokenLimitSchema = z.number().int().positive().optional().catch(undefined)
+const DiscoveredModalitiesSchema = z.array(z.string()).optional().catch(undefined)
+
+export const OpenRouterModelMetadataSchema = z.object({
+  architecture: z
+    .object({
+      input_modalities: DiscoveredModalitiesSchema,
+      output_modalities: DiscoveredModalitiesSchema
+    })
+    .optional()
+    .catch(undefined),
+  context_length: DiscoveredTokenLimitSchema,
+  top_provider: z
+    .object({
+      max_completion_tokens: DiscoveredTokenLimitSchema
+    })
+    .optional()
+    .catch(undefined),
+  supported_parameters: z.array(z.string()).optional().catch(undefined)
+})
+
 // === Poe (OpenAI-compatible with declared endpoint paths) ===
 
 const PoeModelSchema = OpenAIModelSchema.extend({
@@ -129,8 +152,8 @@ export const GeminiModelsResponseSchema = z.object({
       description: z.string().optional(),
       version: z.string().optional(),
       baseModelId: z.string().optional(),
-      inputTokenLimit: z.number().optional(),
-      outputTokenLimit: z.number().optional(),
+      inputTokenLimit: DiscoveredTokenLimitSchema,
+      outputTokenLimit: DiscoveredTokenLimitSchema,
       supportedGenerationMethods: z.array(z.string()).optional()
     })
   ),

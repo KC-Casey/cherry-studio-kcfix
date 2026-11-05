@@ -1,7 +1,7 @@
 import { mockRendererLoggerService } from '@test-mocks/RendererLoggerService'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { ENDPOINT_TYPE, MODEL_CAPABILITY } from '@shared/data/types/model'
+import { ENDPOINT_TYPE, MODALITY, MODEL_CAPABILITY } from '@shared/data/types/model'
 
 import { fetchResolvedProviderModels, resolveCreateModelEndpointTypes, toCreateModelDto } from '../modelSync'
 
@@ -230,6 +230,101 @@ describe('resolveCreateModelEndpointTypes', () => {
 })
 
 describe('toCreateModelDto', () => {
+  it.each([false, true])('preserves discovery only for custom models (preset=%s)', async (preset) => {
+    const discovered = {
+      id: 'custom::vendor/model:free',
+      providerId: 'custom',
+      apiModelId: 'vendor/model:free',
+      name: 'Vendor Model',
+      capabilities: [MODEL_CAPABILITY.IMAGE_RECOGNITION],
+      inputModalities: [MODALITY.TEXT, MODALITY.IMAGE],
+      outputModalities: [MODALITY.TEXT],
+      contextWindow: 200000,
+      maxInputTokens: 180000,
+      maxOutputTokens: 32000,
+      supportsStreaming: false
+    }
+    listModelsMock.mockResolvedValueOnce({ models: [discovered] })
+    dataApiGetMock.mockResolvedValueOnce([
+      {
+        ...discovered,
+        presetModelId: preset ? 'catalog-model' : undefined,
+        capabilities: [],
+        inputModalities: [MODALITY.TEXT],
+        contextWindow: 8192,
+        maxInputTokens: 4096,
+        maxOutputTokens: 1024
+      }
+    ])
+    const {
+      models: [model]
+    } = await fetchResolvedProviderModels('custom')
+    const dto = toCreateModelDto('custom', model)
+    expect(dto.modelId).toBe('vendor/model:free')
+    if (preset) {
+      for (const field of [
+        'capabilities',
+        'inputModalities',
+        'outputModalities',
+        'contextWindow',
+        'maxInputTokens',
+        'maxOutputTokens',
+        'supportsStreaming'
+      ]) {
+        expect(dto).not.toHaveProperty(field)
+      }
+    } else {
+      expect(dto).toMatchObject({
+        capabilities: [MODEL_CAPABILITY.IMAGE_RECOGNITION],
+        inputModalities: [MODALITY.TEXT, MODALITY.IMAGE],
+        outputModalities: [MODALITY.TEXT],
+        contextWindow: 200000,
+        maxInputTokens: 180000,
+        maxOutputTokens: 32000,
+        supportsStreaming: false
+      })
+    }
+    expect(discovered.contextWindow).toBe(200000)
+  })
+
+  it('does not persist synthetic defaults when discovery has no metadata', async () => {
+    const discovered = {
+      id: 'custom::unknown',
+      providerId: 'custom',
+      apiModelId: 'unknown',
+      name: 'unknown',
+      capabilities: [],
+      supportsStreaming: true
+    }
+    listModelsMock.mockResolvedValueOnce({ models: [discovered] })
+    dataApiGetMock.mockResolvedValueOnce([
+      {
+        ...discovered,
+        capabilities: [MODEL_CAPABILITY.FUNCTION_CALL],
+        inputModalities: [MODALITY.TEXT],
+        outputModalities: [MODALITY.TEXT],
+        contextWindow: 8192,
+        maxInputTokens: 4096,
+        maxOutputTokens: 1024
+      }
+    ])
+    const {
+      models: [model]
+    } = await fetchResolvedProviderModels('custom')
+    const dto = toCreateModelDto('custom', model)
+    for (const field of [
+      'capabilities',
+      'inputModalities',
+      'outputModalities',
+      'contextWindow',
+      'maxInputTokens',
+      'maxOutputTokens',
+      'supportsStreaming'
+    ]) {
+      expect(dto).not.toHaveProperty(field)
+    }
+  })
+
   it('writes resolved endpoint types into the create payload', () => {
     expect(
       toCreateModelDto(

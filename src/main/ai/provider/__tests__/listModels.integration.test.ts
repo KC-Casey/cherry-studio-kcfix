@@ -4,7 +4,7 @@ import { mockMainLoggerService } from '@test-mocks/MainLoggerService'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type * as CustomFetchModule from '@main/ai/utils/customFetch'
-import { ENDPOINT_TYPE } from '@shared/data/types/model'
+import { ENDPOINT_TYPE, MODALITY, MODEL_CAPABILITY } from '@shared/data/types/model'
 import { SystemProviderIds } from '@shared/utils/systemProviderId'
 
 import { makeProvider } from '../../__tests__/fixtures/provider'
@@ -193,6 +193,176 @@ describe('listModels - LM Studio response isolation', () => {
       'Duplicate Model'
     ]) {
       expect(logs).not.toContain(payloadValue)
+    }
+  })
+})
+
+describe('listModels - structured provider metadata', () => {
+  it('preserves distinct Gemini input/output limits and ignores invalid optional limits', async () => {
+    const port = await listen(
+      createServer((_request, response) => {
+        response.setHeader('content-type', 'application/json')
+        response.end(
+          JSON.stringify({
+            models: [
+              { name: 'models/custom-gemini', inputTokenLimit: 1048576, outputTokenLimit: 65536 },
+              ...[null, -1, 0, 1.5, '4096'].map((limit, index) => ({
+                name: `models/invalid-${index}`,
+                inputTokenLimit: limit,
+                outputTokenLimit: limit
+              }))
+            ]
+          })
+        )
+      })
+    )
+    const provider = makeProvider({
+      id: 'gemini',
+      defaultChatEndpoint: ENDPOINT_TYPE.GOOGLE_GENERATE_CONTENT,
+      endpointConfigs: { [ENDPOINT_TYPE.GOOGLE_GENERATE_CONTENT]: { baseUrl: `http://127.0.0.1:${port}` } }
+    })
+    const { models } = await listModels(provider, undefined, { throwOnError: true })
+    expect(models).toHaveLength(6)
+    expect(models[0]).toMatchObject({ apiModelId: 'custom-gemini', maxInputTokens: 1048576, maxOutputTokens: 65536 })
+    expect(models[0].contextWindow).toBeUndefined()
+    for (const model of models.slice(1)) {
+      expect(model.maxInputTokens).toBeUndefined()
+      expect(model.maxOutputTokens).toBeUndefined()
+    }
+  })
+
+  it('keeps richer image metadata for duplicate OpenRouter IDs without discarding primary-only fields', async () => {
+    const port = await listen(
+      createServer((request, response) => {
+        response.setHeader('content-type', 'application/json')
+        const data =
+          request.url === '/models'
+            ? [
+                {
+                  id: 'vendor/image',
+                  context_length: 100000,
+                  top_provider: { max_completion_tokens: 16000 },
+                  supported_parameters: ['tools']
+                }
+              ]
+            : request.url === '/image'
+              ? [
+                  {
+                    id: 'vendor/image',
+                    context_length: 200000,
+                    architecture: { input_modalities: ['text', 'image'], output_modalities: ['image'] },
+                    supported_parameters: ['structured_outputs']
+                  }
+                ]
+              : []
+        response.end(JSON.stringify({ data }))
+      })
+    )
+    const root = `http://127.0.0.1:${port}`
+    const provider = makeProvider({
+      id: 'openrouter',
+      endpointConfigs: {
+        [ENDPOINT_TYPE.OPENAI_CHAT_COMPLETIONS]: {
+          modelsApiUrls: {
+            default: `${root}/models`,
+            embedding: `${root}/embedding`,
+            image: `${root}/image`,
+            reranker: `${root}/rerank`
+          }
+        }
+      }
+    })
+    const { models } = await listModels(provider, undefined, { throwOnError: true })
+    expect(models).toHaveLength(1)
+    expect(models[0]).toMatchObject({
+      apiModelId: 'vendor/image',
+      contextWindow: 200000,
+      maxOutputTokens: 16000,
+      inputModalities: [MODALITY.TEXT, MODALITY.IMAGE],
+      outputModalities: [MODALITY.IMAGE],
+      endpointTypes: [ENDPOINT_TYPE.OPENAI_IMAGE_GENERATION],
+      capabilities: [
+        MODEL_CAPABILITY.FUNCTION_CALL,
+        MODEL_CAPABILITY.IMAGE_RECOGNITION,
+        MODEL_CAPABILITY.IMAGE_GENERATION,
+        MODEL_CAPABILITY.STRUCTURED_OUTPUT
+      ]
+    })
+  })
+
+  it('uses only structured OpenRouter declarations and preserves raw IDs on provider copies', async () => {
+    const port = await listen(
+      createServer((request, response) => {
+        response.setHeader('content-type', 'application/json')
+        response.end(
+          JSON.stringify({
+            data:
+              request.url === '/models'
+                ? [
+                    {
+                      id: 'vendor/custom:free',
+                      architecture: {
+                        input_modalities: ['text', 'image', 'file', 'future'],
+                        output_modalities: ['text']
+                      },
+                      context_length: 200000,
+                      top_provider: { max_completion_tokens: 32000 },
+                      supported_parameters: ['tools', 'reasoning', 'structured_outputs']
+                    },
+                    {
+                      id: 'vendor/vision-reasoning-tools',
+                      architecture: null,
+                      context_length: -1,
+                      top_provider: { max_completion_tokens: 'bad' }
+                    },
+                    {
+                      id: 'vendor/unknown',
+                      architecture: { input_modalities: ['future'], output_modalities: null },
+                      supported_parameters: 42
+                    }
+                  ]
+                : []
+          })
+        )
+      })
+    )
+    const root = `http://127.0.0.1:${port}`
+    const provider = makeProvider({
+      id: 'my-router',
+      presetProviderId: 'openrouter',
+      endpointConfigs: {
+        [ENDPOINT_TYPE.OPENAI_CHAT_COMPLETIONS]: {
+          modelsApiUrls: {
+            default: `${root}/models`,
+            embedding: `${root}/embedding`,
+            image: `${root}/image`,
+            reranker: `${root}/rerank`
+          }
+        }
+      }
+    })
+    const { models } = await listModels(provider, undefined, { throwOnError: true })
+    expect(models).toHaveLength(3)
+    expect(models[0]).toMatchObject({
+      apiModelId: 'vendor/custom:free',
+      inputModalities: [MODALITY.TEXT, MODALITY.IMAGE],
+      outputModalities: [MODALITY.TEXT],
+      contextWindow: 200000,
+      maxOutputTokens: 32000,
+      capabilities: [
+        MODEL_CAPABILITY.IMAGE_RECOGNITION,
+        MODEL_CAPABILITY.FILE_INPUT,
+        MODEL_CAPABILITY.FUNCTION_CALL,
+        MODEL_CAPABILITY.REASONING,
+        MODEL_CAPABILITY.STRUCTURED_OUTPUT
+      ]
+    })
+    for (const model of models.slice(1)) {
+      expect(model.capabilities).toEqual([])
+      expect(model.inputModalities).toBeUndefined()
+      expect(model.outputModalities).toBeUndefined()
+      expect(model.contextWindow).toBeUndefined()
+      expect(model.maxOutputTokens).toBeUndefined()
     }
   })
 })

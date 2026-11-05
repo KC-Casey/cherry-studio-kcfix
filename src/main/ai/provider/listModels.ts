@@ -73,6 +73,7 @@ import {
   OllamaTagsResponseSchema,
   OmlxModelStatusResponseSchema,
   OpenAIModelsResponseSchema,
+  OpenRouterModelMetadataSchema,
   OVMSConfigResponseSchema,
   PoeModelsResponseSchema,
   TogetherModelsResponseSchema,
@@ -368,6 +369,8 @@ const geminiFetcher: ModelFetcher = {
           toModel(id, provider, {
             name: m.displayName || id,
             description: m.description,
+            ...(m.inputTokenLimit ? { maxInputTokens: m.inputTokenLimit } : {}),
+            ...(m.outputTokenLimit ? { maxOutputTokens: m.outputTokenLimit } : {}),
             ...metadata
           })
         ]
@@ -692,8 +695,41 @@ const tokenDanceFetcher: ModelFetcher = {
   }
 }
 
+function getOpenRouterModelMetadata(raw: unknown): Partial<Model> {
+  const metadata = OpenRouterModelMetadataSchema.parse(raw)
+  const input = metadata.architecture?.input_modalities
+  const output = metadata.architecture?.output_modalities
+  const parameters = metadata.supported_parameters
+  const modalities = (values: string[] | undefined) =>
+    values?.filter((value): value is NonNullable<Model['inputModalities']>[number] =>
+      Object.values(MODALITY).some((modality) => modality === value)
+    )
+  const inputModalities = modalities(input)
+  const outputModalities = modalities(output)
+  const capabilities: Model['capabilities'] = []
+  if (input?.includes('image')) capabilities.push(MODEL_CAPABILITY.IMAGE_RECOGNITION)
+  if (input?.includes('audio')) capabilities.push(MODEL_CAPABILITY.AUDIO_RECOGNITION)
+  if (input?.includes('video')) capabilities.push(MODEL_CAPABILITY.VIDEO_RECOGNITION)
+  if (input?.includes('file')) capabilities.push(MODEL_CAPABILITY.FILE_INPUT)
+  if (output?.includes('image')) capabilities.push(MODEL_CAPABILITY.IMAGE_GENERATION)
+  if (output?.includes('audio')) capabilities.push(MODEL_CAPABILITY.AUDIO_GENERATION)
+  if (parameters?.includes('tools')) capabilities.push(MODEL_CAPABILITY.FUNCTION_CALL)
+  if (parameters?.includes('reasoning')) capabilities.push(MODEL_CAPABILITY.REASONING)
+  if (parameters?.includes('structured_outputs')) capabilities.push(MODEL_CAPABILITY.STRUCTURED_OUTPUT)
+
+  return {
+    ...(inputModalities?.length ? { inputModalities } : {}),
+    ...(outputModalities?.length ? { outputModalities } : {}),
+    ...(capabilities.length ? { capabilities } : {}),
+    ...(metadata.context_length ? { contextWindow: metadata.context_length } : {}),
+    ...(metadata.top_provider?.max_completion_tokens
+      ? { maxOutputTokens: metadata.top_provider.max_completion_tokens }
+      : {})
+  }
+}
+
 const openRouterFetcher: ModelFetcher = {
-  match: (p) => p.id === SystemProviderIds.openrouter,
+  match: (p) => matchesPreset(p, SystemProviderIds.openrouter),
   fetch: async (provider, signal, options) => {
     const headers = defaultHeaders(provider)
     const modelsApiUrls = provider.endpointConfigs?.[ENDPOINT_TYPE.OPENAI_CHAT_COMPLETIONS]?.modelsApiUrls
@@ -756,12 +792,22 @@ const openRouterFetcher: ModelFetcher = {
     return listing(
       dedup(all, (m) => m.id).map((m) => {
         const imageModel = imageModelsById.get(m.id)
+        const metadata = getOpenRouterModelMetadata(m)
+        const imageMetadata = imageModel ? getOpenRouterModelMetadata(imageModel) : {}
         const model = toModel(m.id, provider, {
           name: imageModel?.name ?? m.name,
           ownedBy: m.owned_by,
+          ...metadata,
+          ...imageMetadata,
           ...(imageModel
             ? {
-                capabilities: [MODEL_CAPABILITY.IMAGE_GENERATION],
+                capabilities: [
+                  ...new Set([
+                    ...(metadata.capabilities ?? []),
+                    ...(imageMetadata.capabilities ?? []),
+                    MODEL_CAPABILITY.IMAGE_GENERATION
+                  ])
+                ],
                 endpointTypes: [ENDPOINT_TYPE.OPENAI_IMAGE_GENERATION]
               }
             : {})

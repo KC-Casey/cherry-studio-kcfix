@@ -80,6 +80,43 @@ describe('OpenAI catalog', () => {
     })
   })
 
+  it.each(['flare', 'sunburst'])('recognizes exact GPT Image 2.6 %s without inventing token limits', (variant) => {
+    const model = loader.findModel(`gpt-image-2.6-${variant}`)
+    expect(model).toMatchObject({
+      id: `gpt-image-2-6-${variant}`,
+      ownedBy: 'openai',
+      capabilities: ['image-recognition', 'image-generation'],
+      inputModalities: ['text', 'image'],
+      outputModalities: ['image']
+    })
+    expect(model?.contextWindow).toBeUndefined()
+    expect(model?.maxInputTokens).toBeUndefined()
+    expect(model?.maxOutputTokens).toBeUndefined()
+    const support = model?.imageGeneration
+    expect(Object.keys(support?.modes ?? {}).sort()).toEqual(['edit', 'generate'])
+    for (const mode of ['edit', 'generate'] as const) {
+      expect(support?.modes[mode]?.supports).toEqual({
+        quality: { type: 'enum', options: ['auto', 'low', 'medium', 'high'] },
+        size: {
+          type: 'enum',
+          render: 'chips',
+          default: '1024x1024',
+          options: ['auto', '1024x1024', '1536x1024', '1024x1536']
+        }
+      })
+      const schema = buildParamsSchema(support, mode)
+      expect(schema.parse({ quality: 'high', size: '1536x1024' })).toMatchObject({
+        quality: 'high',
+        size: '1536x1024'
+      })
+      expect(schema.parse({ quality: 'max', size: '3840x2160' })).toMatchObject({
+        quality: undefined,
+        size: undefined
+      })
+    }
+    expect(loader.findModel(`gpt-image-2.6-${variant}-unknown`)).toBeNull()
+  })
+
   it.each(['gpt-image-2-5-flare', 'gpt-image-2-5-sunburst'])(
     'offers only generate quality and size for %s within the API limits',
     (id) => {

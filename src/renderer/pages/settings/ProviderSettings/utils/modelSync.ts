@@ -58,7 +58,8 @@ export function toCreateModelDto(
 ): CreateModelDto {
   const modelId = getRawModelId(model)
   const resolvedEndpointTypes = endpointTypes?.length ? endpointTypes : model.endpointTypes
-  const capabilities = !model.presetModelId && model.capabilities?.length ? model.capabilities : undefined
+  const custom = !model.presetModelId
+  const capabilities = custom && model.capabilities?.length ? model.capabilities : undefined
 
   return {
     providerId,
@@ -67,9 +68,13 @@ export function toCreateModelDto(
     group: model.group,
     ...(capabilities ? { capabilities: [...capabilities] } : {}),
     ...(resolvedEndpointTypes?.length ? { endpointTypes: [...resolvedEndpointTypes] } : {}),
-    // Discovered rather than registry-supplied for local providers — Ollama's window comes from
-    // `/api/show`, and dropping it here leaves the row without one, so no `num_ctx` is ever sent.
-    ...(model.contextWindow ? { contextWindow: model.contextWindow } : {})
+    // Catalog metadata stays inherited rather than becoming a permanent user override.
+    ...(custom && model.inputModalities?.length ? { inputModalities: [...model.inputModalities] } : {}),
+    ...(custom && model.outputModalities?.length ? { outputModalities: [...model.outputModalities] } : {}),
+    ...(custom && model.contextWindow ? { contextWindow: model.contextWindow } : {}),
+    ...(custom && model.maxInputTokens ? { maxInputTokens: model.maxInputTokens } : {}),
+    ...(custom && model.maxOutputTokens ? { maxOutputTokens: model.maxOutputTokens } : {}),
+    ...(custom && model.supportsStreaming === false ? { supportsStreaming: false } : {})
   }
 }
 
@@ -140,6 +145,19 @@ async function enrichFetchedModels(providerId: string, fetchedModels: Partial<Mo
         continue
       }
       if (field === 'name' && keepFetchedName) {
+        continue
+      }
+      if (
+        !registry.presetModelId &&
+        [
+          'capabilities',
+          'inputModalities',
+          'outputModalities',
+          'contextWindow',
+          'maxInputTokens',
+          'maxOutputTokens'
+        ].includes(field)
+      ) {
         continue
       }
       const value = registry[field]

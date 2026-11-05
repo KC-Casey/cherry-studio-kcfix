@@ -287,9 +287,9 @@ function notifyModelsDeleted(): void {
 }
 
 /**
- * Mapping from UpdateModelDto field → DB column for the update path.
+ * Mapping from persisted UpdateModelDto field → DB column for the update path.
  * Entries are either a shared key name, or [dtoKey, dbColumn] when names differ.
- * Exported for test coverage — ensures no DTO field is silently dropped.
+ * Exported for test coverage — ensures no persisted DTO field is silently dropped.
  */
 export const UPDATE_MODEL_FIELD_MAP: Array<keyof UpdateModelDto | [keyof UpdateModelDto, keyof InsertUserModelRow]> = [
   'name',
@@ -552,6 +552,37 @@ class ModelService {
     existing: UserModelRow,
     dto: UpdateModelDto
   ): Partial<InsertUserModelRow> {
+    if (dto.restoreCatalogDefaults) {
+      const operation = `restore catalog defaults for model ${existing.providerId}/${existing.modelId}`
+      if (Object.keys(dto).length !== 1) {
+        throw DataApiErrorFactory.invalidOperation(operation, 'catalog reset cannot be combined with other edits')
+      }
+      const context = providerService
+        .getReasoningContextsByProviderIdsTx(tx, [existing.providerId])
+        .get(existing.providerId)
+      const resolved = context ? providerRegistryService.resolveModel(context, existing.modelId) : null
+      if (!resolved?.presetModel || resolved.providerModel) {
+        throw DataApiErrorFactory.invalidOperation(operation, 'no matching catalog preset is available')
+      }
+
+      return {
+        presetModelId: resolved.presetModel.id,
+        capabilities: null,
+        inputModalities: null,
+        inputModalitiesExplicit: false,
+        outputModalities: null,
+        contextWindow: null,
+        maxInputTokens: null,
+        maxOutputTokens: null,
+        supportsStreaming: null,
+        reasoning: null,
+        parameters: null,
+        pricing: null,
+        // Custom models without a model route must keep inheriting their provider route.
+        ...(!existing.presetModelId ? { endpointTypes: existing.endpointTypes ?? [] } : {})
+      }
+    }
+
     const updates: Partial<InsertUserModelRow> = {}
     const hasPresetDeltaField = (Object.keys(dto) as (keyof UpdateModelDto)[])
       .map(dtoKeyToDbKey)
@@ -1004,36 +1035,35 @@ class ModelService {
     providerService.assertAvailable(providerId)
     assertManagedCherryAiDefaultModelPatchAllowed(providerId, modelId, dto)
 
-    const db = application.get('DbService').getDb()
+    return application.get('DbService').withWriteTx((tx) => {
+      const [existing] = tx
+        .select()
+        .from(userModelTable)
+        .where(and(eq(userModelTable.providerId, providerId), eq(userModelTable.modelId, modelId)))
+        .limit(1)
+        .all()
 
-    // Fetch existing row (also verifies existence)
-    const [existing] = db
-      .select()
-      .from(userModelTable)
-      .where(and(eq(userModelTable.providerId, providerId), eq(userModelTable.modelId, modelId)))
-      .limit(1)
-      .all()
+      if (!existing) {
+        throw DataApiErrorFactory.notFound('Model', `${providerId}/${modelId}`)
+      }
 
-    if (!existing) {
-      throw DataApiErrorFactory.notFound('Model', `${providerId}/${modelId}`)
-    }
+      const updates = this.buildUpdatesTx(tx, existing, dto)
 
-    const updates = this.buildUpdatesTx(db, existing, dto)
+      if (Object.keys(updates).length === 0) {
+        return this.enrichRowsFromRegistryTx(tx, [existing])[0]
+      }
 
-    if (Object.keys(updates).length === 0) {
-      return this.enrichRowsFromRegistryTx(db, [existing])[0]
-    }
+      const [row] = tx
+        .update(userModelTable)
+        .set(updates)
+        .where(and(eq(userModelTable.providerId, providerId), eq(userModelTable.modelId, modelId)))
+        .returning()
+        .all()
 
-    const [row] = db
-      .update(userModelTable)
-      .set(updates)
-      .where(and(eq(userModelTable.providerId, providerId), eq(userModelTable.modelId, modelId)))
-      .returning()
-      .all()
+      logger.info('Updated model', { providerId, modelId, changes: Object.keys(dto) })
 
-    logger.info('Updated model', { providerId, modelId, changes: Object.keys(dto) })
-
-    return this.enrichRowsFromRegistryTx(db, [row])[0]
+      return this.enrichRowsFromRegistryTx(tx, [row])[0]
+    })
   }
 
   /**

@@ -7,6 +7,8 @@ import { ENDPOINT_TYPE, MODALITY, MODEL_CAPABILITY } from '@shared/data/types/mo
 import AddModelDrawer from '../ModelDrawer/AddModelDrawer'
 import EditModelDrawer from '../ModelDrawer/EditModelDrawer'
 
+vi.mock('../ModelDrawer/ModelCatalogDefaults', () => ({ ModelCatalogDefaults: () => null }))
+
 const useProviderMock = vi.fn()
 const useModelsMock = vi.fn()
 const createModelMock = vi.fn()

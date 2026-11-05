@@ -1,3 +1,4 @@
+import { isEqual } from 'es-toolkit'
 import type { TFunction } from 'i18next'
 import { Plus, Trash2 } from 'lucide-react'
 import { useCallback, useState } from 'react'
@@ -85,12 +86,11 @@ function TierPriceField({
       <div className={drawerClasses.responsiveValueRow}>
         <InputNumber
           min={0}
-          required={!optional}
           aria-label={ariaLabel}
           aria-invalid={Boolean(error)}
           aria-describedby={error ? errorId : undefined}
           value={value === '' ? null : Number(value)}
-          placeholder={optional ? t('models.price.use_input_price') : '0.00'}
+          placeholder={optional ? t('models.price.use_input_price') : t('common.unknown')}
           className={drawerClasses.input}
           onValueChange={(next) => onChange(field, next === null ? '' : String(next))}
           onBlur={(next) => onCommit(field, next === null ? '' : String(next))}
@@ -286,6 +286,11 @@ export function ModelPricingFields({ pricing, onCommit }: ModelPricingFieldsProp
 
   const commitDraft = useCallback(
     (nextDraft: ModelPricingDraft, nextCurrencySymbol: ModelPricingCurrencySymbol = currencySymbol) => {
+      if (
+        isEqual(nextDraft, createModelPricingDraft(pricing)) &&
+        nextCurrencySymbol === getModelPricingCurrencySymbol(pricing)
+      )
+        return
       const result = buildModelPricingFromDraft(pricing, nextDraft, nextCurrencySymbol)
       setErrors(result.errors)
       if (result.pricing) {

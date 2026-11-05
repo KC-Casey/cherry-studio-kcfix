@@ -47,6 +47,19 @@ const gptImage25ImageGeneration = {
   }
 }
 
+// The 2.6 docs confirm standard raster controls; keep unimplemented formats and complexity absent.
+const gptImage26Supports = {
+  quality: gptImageFullSupports.quality,
+  size: gptImageFullSupports.size
+}
+
+const gptImage26ImageGeneration = {
+  modes: {
+    edit: { supports: gptImage26Supports },
+    generate: { supports: gptImage26Supports }
+  }
+}
+
 export default defineCreator({
   id: 'openai',
   name: 'OpenAI',
@@ -269,6 +282,24 @@ export default defineCreator({
         systemMessage: true
       },
       reasoning: { controls: [{ kind: 'effort', values: ['low', 'medium', 'high', 'xhigh', 'max'] }] }
+    },
+    {
+      id: 'gpt-image-2-6-flare',
+      name: 'GPT Image 2.6 Flare',
+      family: 'gpt-image',
+      capabilities: ['image-recognition', 'image-generation'],
+      inputModalities: ['text', 'image'],
+      outputModalities: ['image'],
+      imageGeneration: gptImage26ImageGeneration
+    },
+    {
+      id: 'gpt-image-2-6-sunburst',
+      name: 'GPT Image 2.6 Sunburst',
+      family: 'gpt-image',
+      capabilities: ['image-recognition', 'image-generation'],
+      inputModalities: ['text', 'image'],
+      outputModalities: ['image'],
+      imageGeneration: gptImage26ImageGeneration
     },
     {
       id: 'gpt-image-2-5-flare',

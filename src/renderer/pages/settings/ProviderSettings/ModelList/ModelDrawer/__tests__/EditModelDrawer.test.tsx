@@ -7,6 +7,14 @@ import { CURRENCY, type Model } from '@shared/data/types/model'
 import EditModelDrawer from '../EditModelDrawer'
 import { buildModelImagePricing } from '../modelPricing'
 
+vi.mock('../ModelCatalogDefaults', () => ({
+  ModelCatalogDefaults: ({ busy, onRestore }: { busy: boolean; onRestore: () => Promise<void> }) => (
+    <button type="button" disabled={busy} onClick={() => void onRestore().catch(() => undefined)}>
+      Restore catalog test action
+    </button>
+  )
+}))
+
 const useProviderMock = vi.fn()
 const updateModelMock = vi.fn()
 
@@ -178,6 +186,64 @@ describe('EditModelDrawer', () => {
     vi.clearAllMocks()
     ipcRequest.mockResolvedValue(undefined)
     useProviderMock.mockReturnValue({ provider: { id: 'openai', name: 'OpenAI' } })
+  })
+
+  it('does not turn unknown automatic pricing into an override on focus and blur', async () => {
+    const user = userEvent.setup()
+    render(
+      <EditModelDrawer
+        providerId="openai"
+        open
+        onClose={vi.fn()}
+        model={{ ...makePricingModel(), pricing: undefined }}
+      />
+    )
+    await user.click(screen.getByLabelText('models.price.input'))
+    await user.tab()
+    expect(updateModelMock).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('models.price.input')).toHaveValue('')
+  })
+
+  it('restores using an isolated command and displays unknown prices as blank', async () => {
+    const user = userEvent.setup()
+    const model = { ...makePricingModel(), contextWindow: 128000 }
+    updateModelMock.mockResolvedValue({
+      ...model,
+      pricing: undefined,
+      contextWindow: undefined,
+      presetModelId: 'claude-4-sonnet'
+    })
+    render(<EditModelDrawer providerId="openai" open onClose={vi.fn()} model={model} />)
+    expect(updateModelMock).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Restore catalog test action' }))
+    await waitFor(() =>
+      expect(updateModelMock).toHaveBeenCalledWith('openai', 'claude-4-sonnet', { restoreCatalogDefaults: true })
+    )
+    expect(screen.getByLabelText('models.price.input')).toHaveValue('')
+    expect(screen.getByLabelText('models.price.output')).toHaveValue('')
+    expect(screen.getByLabelText('models.price.input')).toHaveAttribute('placeholder', 'common.unknown')
+  })
+
+  it('waits for earlier edits and aborts restoration when an edit failed', async () => {
+    const user = userEvent.setup()
+    let rejectEdit!: (reason: Error) => void
+    updateModelMock.mockReturnValueOnce(
+      new Promise((_resolve, reject) => {
+        rejectEdit = reject
+      })
+    )
+    render(<EditModelDrawer providerId="openai" open onClose={vi.fn()} model={makePricingModel()} />)
+    const input = screen.getByLabelText('models.price.input')
+    await user.clear(input)
+    await user.type(input, '7')
+    await user.tab()
+    await waitFor(() => expect(updateModelMock).toHaveBeenCalledTimes(1))
+    await user.click(screen.getByRole('button', { name: 'Restore catalog test action' }))
+    expect(updateModelMock).toHaveBeenCalledTimes(1)
+    rejectEdit(new Error('write failed'))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Restore catalog test action' })).not.toBeDisabled())
+    expect(updateModelMock).not.toHaveBeenCalledWith('openai', 'claude-4-sonnet', { restoreCatalogDefaults: true })
+    expect(input).toHaveValue('7')
   })
 
   it('saves an image rate without inventing token prices and retains it when editing tokens', async () => {
