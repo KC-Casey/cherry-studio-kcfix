@@ -65,6 +65,7 @@ Build: https://github.com/KC-Casey/cherry-studio-kcfix/actions/runs/$RunId
 - 选中的输出图保留为下一轮父图；输入本轮指令即可继续编辑，点左侧任意旧图可分叉。
 - 左侧显示父子谱系，中间保留缩放、旋转及改前/改后对比，右侧区分只读生成记录和下一轮参数。
 - 灰色发送按钮会解释原因。仅在服务商确实支持图片编辑时，到 设置→模型服务→编辑模型→更多设置→输入模态 启用视觉；或选择已支持编辑的模型。不会自动修改已有模型配置。
+- 在同一窗口/标签内切到聊天或设置再回来，父图、未发送指令及参考附件会保留；退出应用后不保存未发送草稿。已生成图片及记录仍保存在历史中。
 - 文本附件不会被静默忽略。请在附件菜单选择“粘贴到输入框”展开，或移除附件后发送；父图会保留。
 - 未知的实际尺寸、质量或接口信息会标为未知，不把请求参数当作服务商实际返回结果。
 
@@ -85,6 +86,8 @@ next-edit settings. Disabled sends explain missing image-input capability or uns
 when your provider supports image editing, or select a compatible model. Existing model settings are never changed automatically.
 Expand pasted-text attachments with their menu or remove them before sending; the source image stays selected. Unknown
 provider-effective dimensions/quality and execution details remain unknown rather than being inferred from request settings.
+Within the same window/tab, navigating to Chat or Settings and back retains the source, unsent instruction and attachments.
+Unsent drafts are not saved across application exit; generated outputs and their records remain in history.
 Cherry account/cloud entry points remain removed; third-party API/OAuth remains.
 Production bundles, main/renderer typechecks, focused image/data/portable tests and packaging contracts are checked by this
 workflow, not the full test suite. Publication additionally requires the exact ZIP to pass an isolated Windows Electron test

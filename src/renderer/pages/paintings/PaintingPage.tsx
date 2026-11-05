@@ -2,9 +2,11 @@ import { type FC, useCallback, useEffect, useMemo, useRef, useState } from 'reac
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@cherrystudio/ui'
+import { cacheService } from '@data/CacheService'
 import { useCache } from '@data/hooks/useCache'
 import { QuickPanelProvider } from '@renderer/components/QuickPanel'
 import { dataApiService } from '@renderer/data/DataApiService'
+import { useCurrentTabId } from '@renderer/hooks/tab'
 import type { FileMetadata } from '@renderer/types/file'
 
 import Artboard from './components/Artboard'
@@ -29,29 +31,51 @@ import { paintingClasses } from './paintingPrimitives'
 import { fileEntryToMetadata } from './utils/fileEntryAdapter'
 import { getPaintingFileUrl } from './utils/paintingFileUrl'
 
+interface PaintingWorkbenchSession {
+  painting: PaintingData
+  source: { painting: PaintingData; fileId: string } | null
+  compare: boolean
+}
+
 const PaintingPage: FC = () => {
   const { t } = useTranslation()
   const providerOptions = usePaintingProviderOptions()
   const draftDefaults = usePaintingDraftDefaults(providerOptions)
-  const [currentPainting, setCurrentPainting] = useState<PaintingData>(() => createDefaultPainting(draftDefaults))
-  const [source, setSource] = useState<{ painting: PaintingData; fileId: string } | null>(null)
+  const tabId = useCurrentTabId()
+  const sessionKey = tabId ? `painting.workbench.${tabId}` : null
+  const [session] = useState(() =>
+    sessionKey ? cacheService.getCasual<PaintingWorkbenchSession>(sessionKey) : undefined
+  )
+  const [currentPainting, setCurrentPainting] = useState<PaintingData>(
+    () => session?.painting ?? createDefaultPainting(draftDefaults)
+  )
+  const [source, setSource] = useState<PaintingWorkbenchSession['source']>(session?.source ?? null)
   const sourceRef = useRef(source)
   sourceRef.current = source
   const [selecting, setSelecting] = useState(false)
-  const [compare, setCompare] = useState(true)
+  const [compare, setCompare] = useState(session?.compare ?? true)
   const [parentFile, setParentFile] = useState<FileMetadata | null>(null)
   const [parentUnavailable, setParentUnavailable] = useState(false)
   const [settingsContainer, setSettingsContainer] = useState<HTMLDivElement | null>(null)
   const selectionEpoch = useRef(0)
   const branchedResult = useRef<string | null>(null)
+  // Sidebar navigation replaces the route inside a tab, unmounting its workbench.
+  useEffect(() => {
+    if (sessionKey) cacheService.setCasual(sessionKey, { painting: currentPainting, source, compare })
+  }, [sessionKey, currentPainting, source, compare])
   const patchPainting = useCallback((updates: Partial<PaintingData>) => {
     setCurrentPainting((current) => ({ ...current, ...updates }))
   }, [])
   const history = usePaintingHistory()
   usePaintingInitialDraft({ currentPainting, draftDefaults, setCurrentPainting })
-  usePaintingResultSync({ currentPainting, historyItems: history.items, setCurrentPainting })
   const [cachedGeneration] = useCache(`painting.generation.${currentPainting.id}`)
   const liveGenerationState = useMemo(() => cacheToPaintingGenerationState(cachedGeneration), [cachedGeneration])
+  usePaintingResultSync({
+    currentPainting,
+    historyItems: history.items,
+    generationState: liveGenerationState,
+    setCurrentPainting
+  })
   const modelCatalog = usePaintingModelCatalog({ providerOptions, painting: currentPainting })
   const composerPainting = useMemo<PaintingData>(() => {
     if (currentPainting.model) return currentPainting

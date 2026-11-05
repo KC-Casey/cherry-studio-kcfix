@@ -1,6 +1,11 @@
+import { MockCacheUtils } from '@test-mocks/renderer/CacheService'
 import { mockDataApiService, MockDataApiUtils } from '@test-mocks/renderer/DataApiService'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { StrictMode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { TabIdProvider } from '@renderer/components/layout/TabIdProvider'
 
 import type { PaintingData } from '../model/types/paintingData'
 
@@ -38,18 +43,24 @@ vi.mock('../components/PaintingComposer', () => ({
   default: ({
     painting,
     submitting,
-    onGenerate
+    onGenerate,
+    onPromptChange
   }: {
     painting: { model?: string; prompt?: string; providerId: string }
     submitting: boolean
     onGenerate: () => void
+    onPromptChange: (prompt: string) => void
   }) => (
     <div
       data-testid="painting-composer"
       data-model-id={painting.model}
       data-provider-id={painting.providerId}
       style={{ height: painting.prompt ? 180 : 64 }}>
-      <textarea aria-label="painting prompt" value={painting.prompt ?? ''} readOnly />
+      <textarea
+        aria-label="painting prompt"
+        value={painting.prompt ?? ''}
+        onChange={(event) => onPromptChange(event.target.value)}
+      />
       <button type="button" disabled={submitting} onClick={onGenerate}>
         generate
       </button>
@@ -100,10 +111,6 @@ vi.mock('../hooks/usePaintingDraftDefaults', () => ({
     providerId: mocks.draftProviderId,
     modelId: mocks.draftModelId
   })
-}))
-
-vi.mock('../hooks/usePaintingInitialDraft', () => ({
-  usePaintingInitialDraft: vi.fn()
 }))
 
 vi.mock('../hooks/usePaintingList', () => ({
@@ -157,6 +164,7 @@ const { default: PaintingPage } = await import('../PaintingPage')
 describe('PaintingPage workbench', () => {
   beforeEach(() => {
     MockDataApiUtils.resetMocks()
+    MockCacheUtils.resetMocks()
     mocks.cancel.mockReset()
     mocks.files = []
     mocks.generate.mockReset()
@@ -217,6 +225,64 @@ describe('PaintingPage workbench', () => {
     expect(screen.getByText('paintings.workbench.original_prompt')).toBeInTheDocument()
     expect(screen.getByText('paintings.workbench.instruction')).toBeInTheDocument()
     expect(mocks.generate).not.toHaveBeenCalled()
+  })
+
+  it('restores the selected output and unsent instruction after navigating away and back', async () => {
+    const user = userEvent.setup()
+    mocks.historyItems = [
+      {
+        id: 'old-painting',
+        providerId: 'openai',
+        mode: 'generate',
+        model: 'gpt-image-1',
+        prompt: 'A red house',
+        files: [{ id: 'output-2' }] as PaintingData['files']
+      }
+    ]
+    MockDataApiUtils.setCustomResponse('/files/entries/output-2', 'GET', { id: 'output-2' })
+    const page = () => (
+      <StrictMode>
+        <TabIdProvider tabId="workbench-tab">
+          <PaintingPage />
+        </TabIdProvider>
+      </StrictMode>
+    )
+    const first = render(page())
+    await user.click(screen.getByRole('button', { name: 'select output-2' }))
+    await screen.findByRole('region', { name: 'paintings.workbench.generation_record' })
+    await user.type(screen.getByRole('textbox', { name: 'painting prompt' }), 'Add a blue roof')
+    first.unmount()
+    mocks.draftProviderId = 'another-provider'
+    mocks.draftModelId = 'another-model'
+
+    render(page())
+
+    expect(screen.getByRole('textbox', { name: 'painting prompt' })).toHaveValue('Add a blue roof')
+    expect(screen.getByText('A red house')).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'paintings.workbench.generation_record' })).toBeInTheDocument()
+  })
+
+  it('keeps drafts independent in two mounted tabs and restores each tab separately', async () => {
+    const user = userEvent.setup()
+    const page = (tabId: string) => (
+      <TabIdProvider tabId={tabId}>
+        <PaintingPage />
+      </TabIdProvider>
+    )
+    const first = render(page('first-tab'))
+    const second = render(page('second-tab'))
+    await user.type(within(first.container).getByRole('textbox', { name: 'painting prompt' }), 'First draft')
+    await user.type(within(second.container).getByRole('textbox', { name: 'painting prompt' }), 'Second draft')
+    first.unmount()
+    second.unmount()
+
+    const restoredSecond = render(page('second-tab'))
+    const restoredFirst = render(page('first-tab'))
+
+    expect(within(restoredFirst.container).getByRole('textbox', { name: 'painting prompt' })).toHaveValue('First draft')
+    expect(within(restoredSecond.container).getByRole('textbox', { name: 'painting prompt' })).toHaveValue(
+      'Second draft'
+    )
   })
 
   it('shows an unavailable parent explicitly instead of silently omitting comparison', async () => {

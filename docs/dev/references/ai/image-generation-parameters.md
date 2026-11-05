@@ -333,3 +333,5 @@ descriptor is a pure derivation, not a param.
 | Custom transport contract | `src/main/ai/provider/custom/imageGenerationModel.ts` |
 | Vendor provider + transport | `src/main/ai/provider/custom/<vendor>/{<vendor>Provider,<vendor>Transport}.ts` |
 | Shared transport helpers | `src/main/ai/provider/custom/transportUtils.ts` |
+
+The workbench keeps its selected source, comparison state, unsent instruction, and raw reference/text attachments in renderer memory, scoped to the owning tab and draft. Navigating to Chat or Settings and back restores them without importing files or writing unfinished paintings to the database. Starting a new image starts a clean draft. Unsent drafts are not persisted across application exit; saved outputs and their receipts remain in history. A completed background result clears stale generation progress when the page returns.

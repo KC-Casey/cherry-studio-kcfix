@@ -1,10 +1,12 @@
 import { type Dispatch, type SetStateAction, useEffect } from 'react'
 
 import type { PaintingData } from '../model/types/paintingData'
+import type { PaintingGenerationState } from '../model/utils/paintingGenerationParams'
 
 interface UsePaintingResultSyncInput {
   currentPainting: PaintingData
   historyItems: PaintingData[]
+  generationState?: PaintingGenerationState
   setCurrentPainting: Dispatch<SetStateAction<PaintingData>>
 }
 
@@ -23,8 +25,8 @@ interface UsePaintingResultSyncInput {
  * The Artboard's reveal machine, having watched loading go false with no file,
  * then parks at `{ status: 'awaiting' }` forever — there is no `succeeded`
  * generationStatus for it to escape on. Copying the files in supplies the
- * `currentFile` the reveal is waiting for. Only `files` is synced — prompt,
- * params, inputFiles and every other local edit are preserved — and only when
+ * `currentFile` the reveal is waiting for. Generation state is cleared; prompt,
+ * params, inputFiles and every other local edit are preserved. Sync runs only when
  * history carries strictly more outputs than the local copy, so a fresh draft
  * (absent from history) and an in-flight generation (history not yet caught up)
  * are both left untouched and the sync is idempotent.
@@ -32,6 +34,7 @@ interface UsePaintingResultSyncInput {
 export function usePaintingResultSync({
   currentPainting,
   historyItems,
+  generationState,
   setCurrentPainting
 }: UsePaintingResultSyncInput) {
   const currentId = currentPainting.id
@@ -39,12 +42,26 @@ export function usePaintingResultSync({
   const historyFiles = historyItems.find((item) => item.id === currentId)?.files
 
   useEffect(() => {
+    if (generationState?.generationStatus !== 'failed' && generationState?.generationStatus !== 'canceled') return
+    setCurrentPainting((prev) =>
+      prev.id === currentId && prev.generationStatus === 'running' ? { ...prev, ...generationState } : prev
+    )
+  }, [currentId, generationState, setCurrentPainting])
+
+  useEffect(() => {
     if (!historyFiles || historyFiles.length <= localFileCount) return
     setCurrentPainting((prev) => {
       // Re-check against the freshest state: the visible generation's own
       // applyIfVisible may have merged these files between render and commit.
       if (prev.id !== currentId || prev.files.length >= historyFiles.length) return prev
-      return { ...prev, files: historyFiles }
+      return {
+        ...prev,
+        files: historyFiles,
+        generationStatus: null,
+        generationTaskId: null,
+        generationError: null,
+        generationProgress: null
+      }
     })
   }, [currentId, localFileCount, historyFiles, setCurrentPainting])
 }

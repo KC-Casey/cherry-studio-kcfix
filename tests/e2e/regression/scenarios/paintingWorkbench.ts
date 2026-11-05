@@ -206,15 +206,20 @@ export async function paintingWorkbench(app: RegressionApp, mainWindow: Page, te
       contentType: 'image/png'
     })
 
-    await selectSidebarApp(page, 'Chat')
-    await selectSidebarApp(page, 'Paintings')
-    await expect(view().getByTestId('artboard-image-transform')).toHaveAttribute('src', branchUrl!)
-    await expect(
-      view().getByRole('region', { name: 'Source image and references', exact: true }).getByRole('img')
-    ).toHaveAttribute('src', branchUrl!)
-    await expect(
-      view().getByRole('button', { name: outputLabel(branch.files.output[0]), exact: true })
-    ).toHaveAttribute('aria-pressed', 'true')
+    const pendingInstruction = 'Keep this instruction while I check model settings'
+    await view().locator('[contenteditable="true"]').fill(pendingInstruction)
+    for (const destination of ['Chat', 'Settings']) {
+      await selectSidebarApp(page, destination)
+      await selectSidebarApp(page, 'Paintings')
+      await expect(view().getByTestId('artboard-image-transform')).toHaveAttribute('src', branchUrl!)
+      await expect(
+        view().getByRole('region', { name: 'Source image and references', exact: true }).getByRole('img')
+      ).toHaveAttribute('src', branchUrl!)
+      await expect(
+        view().getByRole('button', { name: outputLabel(branch.files.output[0]), exact: true })
+      ).toHaveAttribute('aria-pressed', 'true')
+      await expect(view().locator('[contenteditable="true"]')).toHaveText(pendingInstruction)
+    }
     page = await app.restart('authenticated')
     await selectSidebarApp(page, 'Paintings')
     const persisted = await readPaintings()

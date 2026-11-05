@@ -1,9 +1,11 @@
 import { renderHook } from '@testing-library/react'
+import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { FileMetadata } from '@renderer/types/file'
 
 import type { PaintingData } from '../../model/types/paintingData'
+import type { PaintingGenerationState } from '../../model/utils/paintingGenerationParams'
 import { usePaintingResultSync } from '../usePaintingResultSync'
 
 const makeFile = (id: string): FileMetadata => ({ id }) as unknown as FileMetadata
@@ -34,7 +36,54 @@ describe('usePaintingResultSync', () => {
     expect(next.files).toEqual(history[0].files)
   })
 
-  it('syncs only files, preserving local edits to prompt, params and inputFiles', () => {
+  it('finishes a restored running draft when its output arrives from history', () => {
+    const running = makePainting('p1', {
+      prompt: 'Add a blue roof',
+      generationStatus: 'running',
+      generationTaskId: 'task-1',
+      generationProgress: 50
+    })
+    const { result, rerender } = renderHook(
+      ({ historyItems }) => {
+        const [currentPainting, setCurrentPainting] = useState(running)
+        usePaintingResultSync({ currentPainting, historyItems, setCurrentPainting })
+        return currentPainting
+      },
+      { initialProps: { historyItems: [] as PaintingData[] } }
+    )
+
+    rerender({ historyItems: [makePainting('p1', { files: [makeFile('result')] })] })
+
+    expect(result.current.files.map((file) => file.id)).toEqual(['result'])
+    expect(result.current.generationStatus).toBeNull()
+    expect(result.current.generationTaskId).toBeNull()
+    expect(result.current.generationProgress).toBeNull()
+    expect(result.current.prompt).toBe('Add a blue roof')
+  })
+
+  it.each(['failed', 'canceled'] as const)(
+    'releases a restored running draft after a background %s result',
+    (status) => {
+      const running = makePainting('p1', { prompt: 'Keep this instruction', generationStatus: 'running' })
+      const { result, rerender } = renderHook(
+        ({ generationState }: { generationState: PaintingGenerationState }) => {
+          const [currentPainting, setCurrentPainting] = useState(running)
+          usePaintingResultSync({ currentPainting, historyItems: [], generationState, setCurrentPainting })
+          return currentPainting
+        },
+        { initialProps: { generationState: { generationStatus: 'running' } } }
+      )
+
+      rerender({
+        generationState: { generationStatus: status, generationError: status === 'failed' ? 'Network error' : null }
+      })
+
+      expect(result.current.generationStatus).toBe(status)
+      expect(result.current.prompt).toBe('Keep this instruction')
+    }
+  )
+
+  it('syncs outputs, preserving local edits to prompt, params and inputFiles', () => {
     const current = makePainting('p1', {
       prompt: 'edited prompt',
       params: { seed: 7 },

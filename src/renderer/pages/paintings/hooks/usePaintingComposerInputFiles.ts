@@ -1,6 +1,7 @@
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { cacheService } from '@data/CacheService'
 import { loggerService } from '@logger'
 import { toast } from '@renderer/services/toast'
 import type { ComposerAttachment } from '@renderer/utils/message/composerAttachment'
@@ -18,7 +19,18 @@ const logger = loggerService.withContext('usePaintingComposerInputFiles')
  */
 export type InputCapability = 'unknown' | 'accept' | 'reject'
 
+export interface PaintingComposerInputDraft {
+  files: ComposerAttachment[]
+  entries: [string, FileEntry][]
+  unseededEntries: FileEntry[]
+  seeded: boolean
+  inputCapability: 'accept' | 'reject' | null
+  providerId: string | undefined
+}
+
 interface Params {
+  draftKey?: string
+  initialDraft?: PaintingComposerInputDraft
   preserveInputs?: boolean
   paintingId: string
   inputFiles: FileEntry[]
@@ -89,14 +101,17 @@ export function usePaintingComposerInputFiles({
   setFiles,
   inputCapability,
   providerId,
-  preserveInputs = false
+  preserveInputs = false,
+  draftKey,
+  initialDraft
 }: Params) {
   const { t } = useTranslation()
-  const entryCacheRef = useRef(new Map<string, FileEntry>())
+  const entryCacheRef = useRef(new Map<string, FileEntry>(initialDraft?.entries))
   // Input files that failed to resolve to a physical path during SEED: they get no
   // composer chip, but must survive materialization so a transient read error never
   // shrinks the input list handed to generation (see materializeInputs).
-  const unseededEntriesRef = useRef<FileEntry[]>([])
+  const unseededEntriesRef = useRef<FileEntry[]>(initialDraft?.unseededEntries ?? [])
+  const seedCompletedRef = useRef(initialDraft?.seeded ?? false)
   const seededPaintingIdRef = useRef<string | null>(null)
   // Draft generation counter. Every event that discards the current draft bumps it,
   // so an in-flight SEED can tell its results are stale before writing them back.
@@ -112,31 +127,34 @@ export function usePaintingComposerInputFiles({
   filesRef.current = files
   // CLEAR bookkeeping: last *resolved* capability (ignores 'unknown' load blips) and
   // the last provider, to detect the model-switch transitions that drop the draft.
-  const lastCapabilityRef = useRef<'accept' | 'reject' | null>(null)
-  const lastProviderIdRef = useRef<string | undefined>(providerId)
+  const lastCapabilityRef = useRef<'accept' | 'reject' | null>(initialDraft?.inputCapability ?? null)
+  const lastProviderIdRef = useRef<string | undefined>(initialDraft ? initialDraft.providerId : providerId)
 
   // SEED — once per painting.
   useEffect(() => {
     if (seededPaintingIdRef.current === paintingId) return
     seededPaintingIdRef.current = paintingId
+    if (seedCompletedRef.current) return
     unseededEntriesRef.current = []
 
     const entries = inputFilesRef.current
     if (entries.length === 0) {
       entryCacheRef.current = new Map()
-      setFiles([])
+      seedCompletedRef.current = true
       return
     }
 
     const epoch = draftEpochRef.current
+    let canceled = false
     void (async () => {
-      const cache = new Map<string, FileEntry>()
+      const cache = new Map(entryCacheRef.current)
       const attachments: ComposerAttachment[] = []
       const unseeded: FileEntry[] = []
       for (const entry of entries) {
         try {
           const path = await window.api.file.getPhysicalPath({ id: entry.id })
-          const sourceId = createComposerFileTokenSourceId()
+          const sourceId =
+            [...cache].find(([, cached]) => cached.id === entry.id)?.[0] ?? createComposerFileTokenSourceId()
           cache.set(sourceId, entry)
           attachments.push({
             fileTokenSourceId: sourceId,
@@ -152,14 +170,17 @@ export function usePaintingComposerInputFiles({
           unseeded.push(entry)
         }
       }
-      if (draftEpochRef.current !== epoch) return
+      if (canceled || draftEpochRef.current !== epoch) return
       entryCacheRef.current = cache
       unseededEntriesRef.current = unseeded
-      setFiles(attachments)
+      seedCompletedRef.current = true
+      const seededIds = new Set(attachments.map((file) => file.fileTokenSourceId))
+      setFiles((current) => [...attachments, ...current.filter((file) => !seededIds.has(file.fileTokenSourceId))])
     })()
 
     return () => {
-      draftEpochRef.current++
+      canceled = true
+      seededPaintingIdRef.current = null
     }
   }, [paintingId, setFiles])
 
@@ -182,8 +203,21 @@ export function usePaintingComposerInputFiles({
     draftEpochRef.current++
     entryCacheRef.current = new Map()
     unseededEntriesRef.current = []
+    seedCompletedRef.current = true
     setFiles([])
   }, [inputCapability, preserveInputs, providerId, setFiles])
+
+  useEffect(() => {
+    if (!draftKey) return
+    cacheService.setCasual<PaintingComposerInputDraft>(draftKey, {
+      files: [...files],
+      entries: [...entryCacheRef.current],
+      unseededEntries: [...unseededEntriesRef.current],
+      seeded: seedCompletedRef.current,
+      inputCapability: lastCapabilityRef.current,
+      providerId: lastProviderIdRef.current
+    })
+  }, [draftKey, files, inputCapability, providerId])
 
   // MATERIALIZE — at generate time. Promote the current composer attachments to
   // FileEntry[]; a cache hit (seeded, or promoted earlier this session) is reused,
@@ -243,11 +277,21 @@ export function usePaintingComposerInputFiles({
     // failure is not a promote failure — those entries already exist and stay
     // complete.
     const preserved = unseededEntriesRef.current
+    if (draftKey) {
+      cacheService.setCasual<PaintingComposerInputDraft>(draftKey, {
+        files: [...filesRef.current],
+        entries: [...cache],
+        unseededEntries: [...preserved],
+        seeded: seedCompletedRef.current,
+        inputCapability: lastCapabilityRef.current,
+        providerId: lastProviderIdRef.current
+      })
+    }
     return {
       entries: preserved.length ? [...entries, ...preserved] : entries,
       complete: failedSourceIds.length === 0
     }
-  }, [setFiles, t])
+  }, [draftKey, setFiles, t])
 
   const getSourceIdForEntry = useCallback(
     (entryId: string) => [...entryCacheRef.current].find(([, entry]) => entry.id === entryId)?.[0],

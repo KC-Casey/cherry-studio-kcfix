@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next'
 import { Button, Popover, PopoverContent, PopoverTrigger, Tooltip } from '@cherrystudio/ui'
 import { cn } from '@cherrystudio/ui/lib/utils'
 import { DIALOG_UNMOUNT_DELAY_MS } from '@cherrystudio/ui/utils'
+import { cacheService } from '@data/CacheService'
 import ComposerSurface, { type ComposerSurfaceActions } from '@renderer/components/composer/ComposerSurface'
 import {
   ComposerToolDerivedStateProvider,
@@ -29,6 +30,7 @@ import { ComposerDictationButton } from '@renderer/components/composer/variants/
 import { fileToComposerToken } from '@renderer/components/composer/variants/shared/composerTokens'
 import type { QuickPanelInputAdapter } from '@renderer/components/QuickPanel'
 import { usePreference } from '@renderer/data/hooks/usePreference'
+import { useCurrentTabId } from '@renderer/hooks/tab'
 import { useModels } from '@renderer/hooks/useModel'
 import { FILE_TYPE } from '@renderer/types/file'
 import type { Model } from '@shared/data/types/model'
@@ -41,7 +43,11 @@ import { imageGenerationToFields } from '../form/imageGenerationToFields'
 import { SIZE_PREVIEW_KEYS, sizeOptionLabel } from '../form/paintingSize'
 import { resolveOptions, resolveOptionValue } from '../form/resolveOptions'
 import { useImageGenerationSupport } from '../hooks/useImageGenerationSupport'
-import { type InputCapability, usePaintingComposerInputFiles } from '../hooks/usePaintingComposerInputFiles'
+import {
+  type InputCapability,
+  type PaintingComposerInputDraft,
+  usePaintingComposerInputFiles
+} from '../hooks/usePaintingComposerInputFiles'
 import type { MaterializeInputs } from '../hooks/usePaintingGenerationSubmit'
 import type { PaintingData } from '../model/types/paintingData'
 import { supportsImageRequestTimeout } from '../utils/imageGenerationTimeout'
@@ -199,6 +205,8 @@ const PaintingParamsButton: FC<{
 }
 
 interface PaintingComposerInnerProps extends PaintingComposerProps {
+  draftKey?: string
+  initialDraft?: PaintingComposerInputDraft
   model?: Model
   couldAddImageFile: boolean
 }
@@ -215,7 +223,9 @@ const PaintingComposerInner: FC<PaintingComposerInnerProps> = ({
   onGenerateRandomSeed,
   model,
   couldAddImageFile,
-  settingsContainer
+  settingsContainer,
+  draftKey,
+  initialDraft
 }) => {
   const { t } = useTranslation()
   const { files, isExpanded } = useComposerToolState()
@@ -275,6 +285,8 @@ const PaintingComposerInner: FC<PaintingComposerInnerProps> = ({
   const inputCapability: InputCapability = !model ? 'unknown' : couldAddImageFile ? 'accept' : 'reject'
 
   const { materializeInputs, getSourceIdForEntry } = usePaintingComposerInputFiles({
+    draftKey,
+    initialDraft,
     paintingId: painting.id,
     inputFiles: painting.inputFiles ?? [],
     files,
@@ -474,6 +486,12 @@ const PaintingComposerInner: FC<PaintingComposerInnerProps> = ({
  */
 const PaintingComposer: FC<PaintingComposerProps> = (props) => {
   const { painting } = props
+  const tabId = useCurrentTabId()
+  const draftKey = tabId ? `painting.composer.${tabId}.${painting.id}` : undefined
+  const initialDraft = useMemo(
+    () => (draftKey ? cacheService.getCasual<PaintingComposerInputDraft>(draftKey) : undefined),
+    [draftKey]
+  )
   const { models } = useModels(painting.providerId ? { providerId: painting.providerId } : undefined)
   const model = useMemo(
     () =>
@@ -493,9 +511,15 @@ const PaintingComposer: FC<PaintingComposerProps> = (props) => {
     // because the removed writeback kept `painting.inputFiles === files`.
     <ComposerToolRuntimeProvider
       key={painting.id}
-      initialState={{ files: [], couldAddImageFile, extensions: PAINTING_IMAGE_EXTS }}
+      initialState={{ files: initialDraft?.files ?? [], couldAddImageFile, extensions: PAINTING_IMAGE_EXTS }}
       actions={{ addNewTopic: () => {}, onTextChange: () => {} }}>
-      <PaintingComposerInner {...props} model={model} couldAddImageFile={couldAddImageFile} />
+      <PaintingComposerInner
+        {...props}
+        draftKey={draftKey}
+        initialDraft={initialDraft}
+        model={model}
+        couldAddImageFile={couldAddImageFile}
+      />
     </ComposerToolRuntimeProvider>
   )
 }

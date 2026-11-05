@@ -1,12 +1,14 @@
+import { MockCacheUtils } from '@test-mocks/renderer/CacheService'
 import { MockUseDataApiUtils } from '@test-mocks/renderer/useDataApi'
 import { MockUsePreferenceUtils } from '@test-mocks/renderer/usePreference'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import i18next from 'i18next'
 import { useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type * as ComposerToolRuntime from '@renderer/components/composer/ComposerToolRuntime'
+import { TabIdProvider } from '@renderer/components/layout/TabIdProvider'
 import { QuickPanelProvider } from '@renderer/components/QuickPanel'
 import { COMPOSER_FILE_KIND, FILE_TYPE } from '@renderer/types/file'
 import type { ComposerAttachment } from '@renderer/utils/message/composerAttachment'
@@ -30,25 +32,45 @@ vi.mock('@renderer/components/composer/ComposerToolRuntime', async (importOrigin
     ComposerToolRuntimeHost: () => {
       const { setFiles } = actual.useComposerToolDispatch()
       return (
-        <button
-          type="button"
-          onClick={() =>
-            setFiles((files: ComposerAttachment[]) => [
-              ...files,
-              {
-                fileTokenSourceId: 'pasted-instruction',
-                path: '/tmp/pasted-instruction.txt' as AbsoluteFilePath,
-                name: 'pasted-instruction.txt',
-                origin_name: 'Pasted instruction',
-                ext: '.txt',
-                size: 2000,
-                type: FILE_TYPE.TEXT,
-                composerFileKind: COMPOSER_FILE_KIND.PASTED_TEXT
-              }
-            ])
-          }>
-          Attach pasted-text fixture
-        </button>
+        <>
+          <button
+            type="button"
+            onClick={() =>
+              setFiles((files: ComposerAttachment[]) => [
+                ...files,
+                {
+                  fileTokenSourceId: 'pasted-instruction',
+                  path: '/tmp/pasted-instruction.txt' as AbsoluteFilePath,
+                  name: 'pasted-instruction.txt',
+                  origin_name: 'Pasted instruction',
+                  ext: '.txt',
+                  size: 2000,
+                  type: FILE_TYPE.TEXT,
+                  composerFileKind: COMPOSER_FILE_KIND.PASTED_TEXT
+                }
+              ])
+            }>
+            Attach pasted-text fixture
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              setFiles((files: ComposerAttachment[]) => [
+                ...files,
+                {
+                  fileTokenSourceId: 'extra-reference',
+                  path: '/tmp/extra-reference.png' as AbsoluteFilePath,
+                  name: 'extra-reference.png',
+                  origin_name: 'Extra reference',
+                  ext: '.png',
+                  size: 100,
+                  type: FILE_TYPE.IMAGE
+                }
+              ])
+            }>
+            Attach extra image fixture
+          </button>
+        </>
       )
     }
   }
@@ -87,30 +109,53 @@ const branch: PaintingData = {
   }
 }
 
-function Harness({ initial = branch }: { initial?: PaintingData }) {
+function Harness({ initial = branch, tabId = 'workbench' }: { initial?: PaintingData; tabId?: string }) {
   const [painting, setPainting] = useState(initial)
   const [submitted, setSubmitted] = useState('')
+  const [visible, setVisible] = useState(true)
   const generate = async (materialize: MaterializeInputs) => {
     const result = await materialize()
     if (result.complete) setSubmitted(`${painting.prompt}|${result.entries.map((entry) => entry.id).join(',')}`)
   }
   return (
-    <QuickPanelProvider>
-      <button type="button" onClick={() => setPainting((value) => ({ ...value, model: 'editing' }))}>
-        Select editing model
-      </button>
-      <PaintingComposer
-        painting={painting}
-        generating={false}
-        submitting={false}
-        onPromptChange={(prompt) => setPainting((value) => ({ ...value, prompt }))}
-        onGenerate={generate}
-        onCancel={() => {}}
-        onModelSelect={() => {}}
-        onConfigChange={() => {}}
-      />
-      <div aria-label="Submitted instruction">{submitted}</div>
-    </QuickPanelProvider>
+    <TabIdProvider tabId={tabId}>
+      <QuickPanelProvider>
+        <button type="button" onClick={() => setVisible((value) => !value)}>
+          {visible ? 'Navigate away' : 'Return to paintings'}
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            setPainting({
+              ...initial,
+              id: 'new-draft',
+              mode: 'generate',
+              prompt: '',
+              files: [],
+              inputFiles: [],
+              editReceipt: undefined
+            })
+          }>
+          New Image
+        </button>
+        <button type="button" onClick={() => setPainting((value) => ({ ...value, model: 'editing' }))}>
+          Select editing model
+        </button>
+        {visible && (
+          <PaintingComposer
+            painting={painting}
+            generating={false}
+            submitting={false}
+            onPromptChange={(prompt) => setPainting((value) => ({ ...value, prompt }))}
+            onGenerate={generate}
+            onCancel={() => {}}
+            onModelSelect={() => {}}
+            onConfigChange={() => {}}
+          />
+        )}
+        <div aria-label="Submitted instruction">{submitted}</div>
+      </QuickPanelProvider>
+    </TabIdProvider>
   )
 }
 
@@ -119,6 +164,7 @@ describe('PaintingComposer edit recovery', () => {
     Object.defineProperty(document, 'elementFromPoint', { configurable: true, value: () => null })
     Range.prototype.getClientRects = () => [] as unknown as DOMRectList
     Range.prototype.getBoundingClientRect = () => new DOMRect()
+    MockCacheUtils.resetMocks()
     MockUseDataApiUtils.resetMocks()
     MockUseDataApiUtils.mockQueryData('/models', models)
     MockUsePreferenceUtils.setPreferenceValue('chat.input.paste_long_text_as_file', true)
@@ -204,6 +250,57 @@ describe('PaintingComposer edit recovery', () => {
       expect(submitted.replace(/^Make it blue:\s+/, '')).toBe(`${fileText}|parent-output`)
     })
     expect(window.api.file.createInternalEntry).not.toHaveBeenCalled()
+  })
+
+  it('restores source, new references and text capsules per tab, then resets them for a new image', async () => {
+    const user = userEvent.setup()
+    const initial = { ...branch, model: 'editing' }
+    render(<Harness initial={initial} tabId="first-tab" />)
+    await screen.findByAltText('source.png')
+    await user.click(screen.getByRole('button', { name: 'Attach extra image fixture' }))
+    await user.click(screen.getByRole('button', { name: 'Attach pasted-text fixture' }))
+    expect(await screen.findByAltText('Extra reference')).toBeVisible()
+    expect(await screen.findByText('Pasted instruction')).toBeVisible()
+    const other = render(<Harness initial={initial} tabId="second-tab" />)
+    expect(await within(other.container).findByAltText('source.png')).toBeVisible()
+    expect(within(other.container).queryByAltText('Extra reference')).not.toBeInTheDocument()
+    expect(within(other.container).queryByText('Pasted instruction')).not.toBeInTheDocument()
+    other.unmount()
+
+    await user.click(screen.getByRole('button', { name: 'Navigate away' }))
+    expect(screen.queryByAltText('source.png')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Return to paintings' }))
+
+    expect(await screen.findByAltText('source.png')).toBeVisible()
+    expect(await screen.findByAltText('Extra reference')).toBeVisible()
+    expect(await screen.findByText('Pasted instruction')).toBeVisible()
+    expect(screen.getByRole('status')).toHaveTextContent('Only images can be attached here')
+    expect(window.api.file.createInternalEntry).not.toHaveBeenCalled()
+    window.api.fs = { ...window.api.fs, readText: vi.fn(async () => 'Keep both reference images') }
+    await user.click(screen.getByRole('button', { name: 'Paste into input' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Send' })).toHaveAttribute('aria-disabled', 'false'))
+    vi.mocked(window.api.file.createInternalEntry).mockResolvedValue({ ...parent, id: 'new-reference' })
+    await user.click(screen.getByRole('button', { name: 'Send' }))
+    await waitFor(() =>
+      expect(screen.getByLabelText('Submitted instruction')).toHaveTextContent(
+        /Keep both reference images\s*\|parent-output,new-reference$/
+      )
+    )
+    expect(window.api.file.createInternalEntry).toHaveBeenCalledTimes(1)
+    expect(window.api.file.createInternalEntry).toHaveBeenCalledWith({
+      source: 'path',
+      path: '/tmp/extra-reference.png',
+      cleanupPolicy: 'delete_when_unreferenced'
+    })
+
+    await user.click(screen.getByRole('button', { name: 'New Image' }))
+    await waitFor(() => expect(screen.queryByAltText('source.png')).not.toBeInTheDocument())
+    expect(screen.queryByAltText('Extra reference')).not.toBeInTheDocument()
+    expect(screen.queryByText('Pasted instruction')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Navigate away' }))
+    await user.click(screen.getByRole('button', { name: 'Return to paintings' }))
+    expect(screen.queryByAltText('source.png')).not.toBeInTheDocument()
+    expect(screen.queryByAltText('Extra reference')).not.toBeInTheDocument()
   })
 
   // Painting accepts images, so the chat preference must not turn long instructions into files.
