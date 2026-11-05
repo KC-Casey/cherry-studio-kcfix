@@ -9,6 +9,7 @@ import type { FileMetadata } from '@renderer/types/file'
 
 import Artboard from './components/Artboard'
 import PaintingComposer from './components/PaintingComposer'
+import PaintingRecord from './components/PaintingRecord'
 import PaintingStrip from './components/PaintingStrip'
 import { presentPaintingGenerateError } from './errors/paintingGenerateError'
 import { usePaintingDraftDefaults } from './hooks/usePaintingDraftDefaults'
@@ -126,7 +127,10 @@ const PaintingPage: FC = () => {
     void list.add()
   }
   const preview = source
-    ? { ...source.painting, files: source.painting.files.filter((file) => file.id === source.fileId) }
+    ? {
+        ...source.painting,
+        files: source.painting.files.filter((file) => file.id === source.fileId)
+      }
     : composerPainting
   const parentFileId = source?.painting.editReceipt?.parentFileId
   useEffect(() => {
@@ -227,18 +231,27 @@ const PaintingPage: FC = () => {
                     onConfigChange={patchPainting}
                     onGenerateRandomSeed={(key) =>
                       patchPainting({
-                        params: { ...currentPainting.params, [key]: String(Math.floor(Math.random() * 1_000_000)) }
+                        params: {
+                          ...currentPainting.params,
+                          [key]: String(Math.floor(Math.random() * 1_000_000))
+                        }
                       })
                     }
                   />
                 </QuickPanelProvider>
               </div>
             </div>
-            <div
-              ref={setSettingsContainer}
-              className="w-64 shrink-0 overflow-y-auto border-l border-border p-3 max-lg:w-48"
-              inert={busy || generating}
-            />
+            <aside className="w-64 shrink-0 overflow-y-auto border-l border-border p-3 max-lg:w-48">
+              {source && (
+                <PaintingRecord
+                  key={`${source.painting.id}:${source.fileId}`}
+                  painting={source.painting}
+                  fileId={source.fileId}
+                />
+              )}
+              <h2 className="my-3 text-xs font-medium">{t('paintings.workbench.next_edit_settings')}</h2>
+              <div ref={setSettingsContainer} inert={busy || generating} />
+            </aside>
           </div>
         </div>
       </div>

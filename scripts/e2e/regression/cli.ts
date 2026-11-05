@@ -113,7 +113,7 @@ async function preflightCommand(): Promise<void> {
     assertMockTask(task)
     await verifyMockProvider(getRunPaths(directory))
   }
-  if (task === 'chat-stream-failure' || task === 'translation-settings') return
+  if (task === 'chat-stream-failure' || task === 'translation-settings' || task === 'painting-workbench') return
   loadTestConfig()
   const redacted = createRedactor(getSensitiveConfigValues())
   process.stdout.write(`${JSON.stringify(redacted({ configured: REQUIRED_CONFIG }), null, 2)}\n`)

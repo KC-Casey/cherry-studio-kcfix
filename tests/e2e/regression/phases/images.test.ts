@@ -17,6 +17,11 @@ import { addCherryInModel, ensureCherryInSignedIn } from '../helpers/cherryIn'
 import { selectVisibleModel } from '../helpers/models'
 import { selectSidebarApp } from '../helpers/navigation'
 import { closeSettings } from '../helpers/settings'
+import { paintingWorkbench } from '../scenarios/paintingWorkbench'
+
+test(...caseDefinition('P-02'), async ({ app, mainWindow }, testInfo) => {
+  await paintingWorkbench(app, mainWindow, testInfo)
+})
 
 test(...caseDefinition('MP-90'), async ({ app, mainWindow: page }, testInfo) => {
   testInfo.annotations.push({

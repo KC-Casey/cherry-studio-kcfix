@@ -17,7 +17,7 @@ import {
   useComposerToolLauncherVersion,
   useComposerToolState
 } from '@renderer/components/composer/ComposerToolRuntime'
-import type { ComposerDraftToken } from '@renderer/components/composer/tokens'
+import type { ComposerDraftToken, ComposerSerializedToken } from '@renderer/components/composer/tokens'
 import { getComposerToolConfig } from '@renderer/components/composer/tools/registry'
 import {
   COMPOSER_ICON_ONLY_LABEL_CLASS,
@@ -52,10 +52,6 @@ import { PaintingPromptPresetsDialog } from './PaintingPromptPresetsDialog'
 import PaintingSettings from './PaintingSettings'
 
 const PAINTING_MANAGED_TOKEN_KINDS: readonly ComposerDraftToken['kind'][] = ['file']
-// Edit-image models render their inputs via the top reference-image tray, not file
-// pills, so the composer manages no tokens then (empty set = no doc token reconcile).
-const PAINTING_NO_MANAGED_TOKEN_KINDS: readonly ComposerDraftToken['kind'][] = []
-const EMPTY_TOKENS: readonly ComposerDraftToken[] = []
 const PAINTING_IMAGE_EXTS = imageExts.map((ext) => (ext.startsWith('.') ? ext : `.${ext}`))
 const PAINTING_SCOPE = 'painting' as const
 
@@ -278,7 +274,7 @@ const PaintingComposerInner: FC<PaintingComposerInnerProps> = ({
   // draft-clear on a model switch (see usePaintingComposerInputFiles CLEAR).
   const inputCapability: InputCapability = !model ? 'unknown' : couldAddImageFile ? 'accept' : 'reject'
 
-  const { materializeInputs } = usePaintingComposerInputFiles({
+  const { materializeInputs, getSourceIdForEntry } = usePaintingComposerInputFiles({
     paintingId: painting.id,
     inputFiles: painting.inputFiles ?? [],
     files,
@@ -288,13 +284,44 @@ const PaintingComposerInner: FC<PaintingComposerInnerProps> = ({
     preserveInputs: !!painting.editReceipt?.parentFileId
   })
 
-  // Edit-image models: images live in the top reference-image tray (reads `files` from
-  // context), so emit no file pills and manage no tokens — `files` stays authoritative.
-  const tokens = useMemo(
-    () => (couldAddImageFile ? EMPTY_TOKENS : files.map(fileToComposerToken)),
-    [couldAddImageFile, files]
+  const parentFileId = painting.editReceipt?.parentFileId
+  const showReferenceImages = couldAddImageFile || !!parentFileId
+  const hasUnsupportedFiles = files.some((file) => file.type !== FILE_TYPE.IMAGE)
+  const blockedReason =
+    !model && parentFileId
+      ? t('paintings.edit.model_unavailable')
+      : parentFileId && !couldAddImageFile
+        ? t('paintings.edit.model_not_configured')
+        : hasUnsupportedFiles
+          ? t('paintings.edit.text_file_instructions')
+          : missingRequiredImage
+            ? t('paintings.edit.image_required')
+            : undefined
+  const referenceImages = (
+    <PaintingImageGallery protectedSourceId={parentFileId ? getSourceIdForEntry(parentFileId) : undefined} />
   )
-  const handleTokensChange = useComposerTokenReconcile({ scope: PAINTING_SCOPE, model })
+
+  // Images belong to the reference tray; document capsules stay visible for recovery.
+  const tokens = useMemo(
+    () => files.filter((file) => !showReferenceImages || file.type !== FILE_TYPE.IMAGE).map(fileToComposerToken),
+    [showReferenceImages, files]
+  )
+  const reconcileTokens = useComposerTokenReconcile({ scope: PAINTING_SCOPE, model })
+  const handleTokensChange = useCallback(
+    (draftTokens: readonly ComposerSerializedToken[]) => {
+      const referenceTokens = showReferenceImages
+        ? files
+            .filter((file) => file.type === FILE_TYPE.IMAGE)
+            .map((file) => ({
+              ...fileToComposerToken(file),
+              index: 0,
+              textOffset: 0
+            }))
+        : []
+      reconcileTokens([...draftTokens, ...referenceTokens])
+    },
+    [files, reconcileTokens, showReferenceImages]
+  )
 
   const handleTextChange = useCallback((value: string) => onPromptChange(value), [onPromptChange])
 
@@ -316,16 +343,21 @@ const PaintingComposerInner: FC<PaintingComposerInnerProps> = ({
               onConfigChange={onConfigChange}
               onGenerateRandomSeed={onGenerateRandomSeed}
             />
-            {couldAddImageFile && (
-              <section>
+            {showReferenceImages && (
+              <section aria-label={t('paintings.workbench.references')}>
                 <p className="mb-2 text-xs font-medium">{t('paintings.workbench.references')}</p>
-                <PaintingImageGallery />
-                <PaintingImageAddButton />
+                {referenceImages}
+                {couldAddImageFile && <PaintingImageAddButton />}
               </section>
             )}
           </div>,
           settingsContainer
         )}
+      {blockedReason && (
+        <p role="status" className="px-3 text-sm text-muted-foreground">
+          {blockedReason}
+        </p>
+      )}
       <ComposerSurface
         onActionsChange={(actions) => {
           surfaceActions.current = actions
@@ -334,9 +366,9 @@ const PaintingComposerInner: FC<PaintingComposerInnerProps> = ({
         text={text}
         onTextChange={handleTextChange}
         tokens={tokens}
-        managedTokenKinds={couldAddImageFile ? PAINTING_NO_MANAGED_TOKEN_KINDS : PAINTING_MANAGED_TOKEN_KINDS}
+        managedTokenKinds={PAINTING_MANAGED_TOKEN_KINDS}
         onTokensChange={handleTokensChange}
-        topContent={!settingsContainer && couldAddImageFile ? <PaintingImageGallery /> : undefined}
+        topContent={!settingsContainer && showReferenceImages ? referenceImages : undefined}
         leadingContent={!settingsContainer && couldAddImageFile ? <PaintingImageAddButton /> : undefined}
         placeholder={placeholder}
         sendDisabled={
@@ -345,9 +377,10 @@ const PaintingComposerInner: FC<PaintingComposerInnerProps> = ({
           !model ||
           (!!painting.editReceipt?.parentFileId && !couldAddImageFile) ||
           (text.trim().length === 0 && files.length === 0) ||
-          missingRequiredImage
+          missingRequiredImage ||
+          hasUnsupportedFiles
         }
-        sendBlockedReason={missingRequiredImage ? t('paintings.edit.image_required') : undefined}
+        sendBlockedReason={blockedReason}
         isLoading={generating}
         onSendDraft={handleSendDraft}
         onPause={onCancel}

@@ -1,6 +1,6 @@
 import { Loader2, Plus, Trash2 } from 'lucide-react'
 import type { FC, UIEventHandler } from 'react'
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button, Tooltip } from '@cherrystudio/ui'
@@ -10,6 +10,7 @@ import type { PaintingStripEntry } from '../hooks/usePaintingHistory'
 import type { PaintingData } from '../model/types/paintingData'
 import { paintingClasses } from '../paintingPrimitives'
 import { getPaintingFileUrl } from '../utils/paintingFileUrl'
+import { buildPaintingLineage } from '../utils/paintingLineage'
 import PaintingSkeletonSurface from './PaintingSkeletonSurface'
 
 interface PaintingStripProps {
@@ -44,6 +45,7 @@ const PaintingStripItem: FC<{
         type="button"
         className="absolute inset-0 z-0"
         aria-label={selectLabel}
+        aria-pressed={selected}
         onClick={() => onSelect(painting)}>
         <span className="pointer-events-none absolute inset-0 overflow-hidden rounded-[12px]">
           {previewUrl ? (
@@ -99,6 +101,7 @@ const PaintingStrip: FC<PaintingStripProps> = ({
 }) => {
   const { t } = useTranslation()
   const stripRef = useRef<HTMLDivElement>(null)
+  const lineage = useMemo(() => buildPaintingLineage(items), [items])
   const handleScroll: UIEventHandler<HTMLDivElement> = (event) => {
     const target = event.currentTarget
     if (target.scrollTop + target.clientHeight >= target.scrollHeight - 120) {
@@ -116,6 +119,7 @@ const PaintingStrip: FC<PaintingStripProps> = ({
   return (
     <>
       <div ref={stripRef} className={paintingClasses.historyStrip} onScroll={handleScroll}>
+        <h2 className="text-xs font-medium">{t('paintings.workbench.lineage')}</h2>
         <Tooltip content={t('paintings.button.new.image')} placement="right" delay={500}>
           <Button
             type="button"
@@ -129,28 +133,55 @@ const PaintingStrip: FC<PaintingStripProps> = ({
             <Plus className="size-4" />
           </Button>
         </Tooltip>
-        {items.flatMap((painting) =>
-          (painting.files.length ? painting.files : [undefined]).map((file) => (
-            <div key={`${painting.id}:${file?.id ?? 'pending'}`}>
-              <PaintingStripItem
-                painting={file ? { ...painting, files: [file] } : painting}
-                selected={painting.id === selectedPaintingId && (!selectedFileId || file?.id === selectedFileId)}
-                loading={painting.id === runningPaintingId}
-                onDelete={() => void onDeletePainting(painting)}
-                onSelect={() => onSelectPainting(painting, file?.id)}
-                selectLabel={t('paintings.button.select.image')}
-                deleteLabel={t('paintings.button.delete.image.label')}
-              />
-              {painting.editReceipt?.parentPaintingId && (
-                <span
-                  className="block truncate text-center text-xs text-muted-foreground"
-                  title={painting.editReceipt.parentPaintingId}>
-                  ↳
-                </span>
-              )}
-            </div>
-          ))
-        )}
+        <ol aria-label={t('paintings.workbench.lineage')} className="flex flex-col gap-3">
+          {lineage.map(({ painting, file, parent, depth }) => {
+            const outputId = file?.id ?? painting.id
+            const label = t('paintings.workbench.output_label', { id: outputId })
+            const parentId = painting.editReceipt?.parentFileId
+            return (
+              <li
+                key={`${painting.id}:${outputId}`}
+                aria-label={label}
+                className="border-l border-border-subtle pl-2"
+                style={{ marginLeft: Math.min(depth, 3) * 12 }}>
+                <PaintingStripItem
+                  painting={file ? { ...painting, files: [file] } : painting}
+                  selected={painting.id === selectedPaintingId && (!selectedFileId || file?.id === selectedFileId)}
+                  loading={painting.id === runningPaintingId}
+                  onDelete={() => void onDeletePainting(painting)}
+                  onSelect={() => onSelectPainting(painting, file?.id)}
+                  selectLabel={label}
+                  deleteLabel={t('paintings.button.delete.image.label')}
+                />
+                <p className="mt-1 truncate text-xs" title={outputId}>
+                  {label}
+                </p>
+                {parentId ? (
+                  parent ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-auto max-w-full justify-start px-0 text-xs text-link"
+                      title={parentId}
+                      onClick={() => onSelectPainting(parent.painting, parent.file?.id)}>
+                      <span className="truncate">{t('paintings.workbench.parent_label', { id: parentId })}</span>
+                    </Button>
+                  ) : (
+                    <p className="break-all text-xs text-muted-foreground" title={parentId}>
+                      {t('paintings.workbench.parent_label', { id: parentId })}
+                      <br />
+                      <span>{t('paintings.workbench.parent_not_loaded')}</span>
+                    </p>
+                  )
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    {t(painting.editReceipt ? 'paintings.workbench.root_image' : 'paintings.workbench.legacy_lineage')}
+                  </p>
+                )}
+              </li>
+            )
+          })}
+        </ol>
         {hasMore && <Loader2 className="mx-auto size-4 shrink-0 animate-spin text-foreground-tertiary" aria-hidden />}
       </div>
 

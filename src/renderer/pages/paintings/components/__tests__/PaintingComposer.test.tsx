@@ -216,15 +216,6 @@ describe('PaintingComposer', () => {
     mockIsEditImageModel.mockReturnValue(false)
   })
 
-  it('renders the top image strip + add button and drops file pills for edit-image models', () => {
-    mockIsEditImageModel.mockReturnValue(true)
-    renderComposer()
-    expect(captured.surfaceProps?.topContent).toBeTruthy()
-    expect(captured.surfaceProps?.leadingContent).toBeTruthy()
-    expect(captured.surfaceProps?.tokens).toEqual([])
-    expect(captured.surfaceProps?.managedTokenKinds).toEqual([])
-  })
-
   it('keeps file pills and no image tray for non-edit models', () => {
     renderComposer()
     expect(captured.surfaceProps?.topContent).toBeUndefined()
@@ -281,8 +272,8 @@ describe('PaintingComposer', () => {
     mockUseImageGenerationSupport.mockReturnValue(editOnlySupport)
     composerState.files = [{ ...imageAttachment('doc'), ext: '.pdf', type: FILE_TYPE.DOCUMENT }]
     renderComposer({ painting: makePainting({ prompt: 'make the sky purple' }) })
-    expect(captured.surfaceProps?.sendDisabled).toBe(true)
-    expect(captured.surfaceProps?.sendBlockedReason).toBe('paintings.edit.image_required')
+    expect(screen.getByRole('button', { name: 'send' })).toBeDisabled()
+    expect(screen.getByRole('status')).toHaveTextContent('paintings.edit.text_file_instructions')
   })
 
   it('does not gate on image for edit models that can also generate from text', () => {

@@ -228,6 +228,13 @@ export const REGRESSION_CASES = [
     tasks: ['paintings', 'image-generation']
   },
   {
+    id: 'P-02',
+    title: 'Edit, branch and restore image workbench lineage',
+    tasks: ['paintings', 'painting-workbench'],
+    phase: 'images',
+    capabilities: []
+  },
+  {
     id: 'MP-90',
     title: 'Enlarge, preview, and save images',
     tasks: ['paintings'],

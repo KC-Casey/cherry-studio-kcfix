@@ -21,6 +21,27 @@ Vendor wire-format quirks live in exactly one declarative place each.
 
 ---
 
+## Image workbench branch inputs and history
+
+Selecting a completed output starts a separate edit draft with that exact output as its parent input.
+The parent image is retained across model changes; changing provider or input capability does not
+silently turn the branch into a text-only generation. The composer reports unresolved or non-image-input
+models visibly. Its capability check does not rewrite user model overrides or infer support from a name.
+Non-image attachment capsules must be expanded into instruction text or removed before sending; the
+image pipeline must not silently discard a pasted instruction stored in a document capsule.
+
+The left history groups loaded outputs by their exact parent output, including separate outputs of one
+request. An ancestor outside the loaded page is marked as not loaded rather than fabricated. Selecting
+any available output starts a new branch. The read-only generation record describes the selected
+historical image, separately from the next request's editable settings. Missing execution values remain
+unknown. The stored interface is an actual adapter/operation identity, not a claimed HTTP endpoint;
+credentials and raw request bodies are not stored in the receipt.
+
+The `painting-workbench` regression case exercises the real packaged Electron app with an isolated
+profile and a loopback HTTP image fixture. It checks consecutive edits, source bytes, branching,
+before/after comparison and restart persistence. It does not establish live-provider model support or
+image quality, and is not evidence of a pass until the corresponding Actions run completes successfully.
+
 ## The data chain at a glance
 
 One canonical param set (`paramValues`) is the trunk. It forks into two delivery

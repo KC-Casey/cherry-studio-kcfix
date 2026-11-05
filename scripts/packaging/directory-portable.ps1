@@ -61,6 +61,13 @@ Build: https://github.com/KC-Casey/cherry-studio-kcfix/actions/runs/$RunId
    本版本未签名，Windows 可能提示安全警告。先核对 SHA256SUMS 和来源，再按自己的安全判断决定是否运行。
    可在 PowerShell 中执行 Get-FileHash .\$name.zip -Algorithm SHA256 核对校验值。
 
+本次图片工作台修复
+- 选中的输出图保留为下一轮父图；输入本轮指令即可继续编辑，点左侧任意旧图可分叉。
+- 左侧显示父子谱系，中间保留缩放、旋转及改前/改后对比，右侧区分只读生成记录和下一轮参数。
+- 灰色发送按钮会解释原因。仅在服务商确实支持图片编辑时，到 设置→模型服务→编辑模型→更多设置→输入模态 启用视觉；或选择已支持编辑的模型。不会自动修改已有模型配置。
+- 文本附件不会被静默忽略。请在附件菜单选择“粘贴到输入框”展开，或移除附件后发送；父图会保留。
+- 未知的实际尺寸、质量或接口信息会标为未知，不把请求参数当作服务商实际返回结果。
+
 English instructions
 Extract the entire ZIP into a new writable location, open $name, then run cherry-studio-kcfix.exe.
 Keep the EXE, resources, locales, DLLs and cherry-portable.json together. No installer or per-launch NSIS extraction.
@@ -72,9 +79,18 @@ Wait for copying and restart; do not manually overwrite existing data. Boot conf
 can still remain on C:. After moving the application folder, reconfigure startup and shortcuts for the new location.
 This build is unsigned. Verify the ZIP hash against SHA256SUMS and assess any Windows security warning before running.
 
-This preview retains image edit lineage and removes Cherry account/cloud entry points; third-party API/OAuth remains.
-Production bundles, main/renderer typechecks and focused image editing, data relocation, portable startup/relaunch and packaging
-contracts are checked by this workflow, not the full test suite. Interactive Windows behavior and live image edits need local testing.
+Image workbench: the selected output is retained for the next edit. Older images create new branches. The left panel shows
+parent/child lineage; the center keeps zoom, rotate and before/after comparison; the right separates read-only receipts from
+next-edit settings. Disabled sends explain missing image-input capability or unsupported text attachments. Enable Vision only
+when your provider supports image editing, or select a compatible model. Existing model settings are never changed automatically.
+Expand pasted-text attachments with their menu or remove them before sending; the source image stays selected. Unknown
+provider-effective dimensions/quality and execution details remain unknown rather than being inferred from request settings.
+Cherry account/cloud entry points remain removed; third-party API/OAuth remains.
+Production bundles, main/renderer typechecks, focused image/data/portable tests and packaging contracts are checked by this
+workflow, not the full test suite. Publication additionally requires the exact ZIP to pass an isolated Windows Electron test
+covering generation, sequential edits, branching, before/after and process restart against a loopback image API fixture.
+The fixture verifies request routing and source-image bytes, not your provider, image quality or performance on your machine.
+Live provider editing and actual local Windows experience still need your testing.
 Optional local-model runtimes are downloaded on first use; they are not included. 本地模型运行库首次使用需联网下载。
 The source commit, version, locked dependencies and Actions run identify this build; byte-for-byte reproducibility is not claimed.
 "@ | Set-Content -LiteralPath "$output/README.txt" -Encoding utf8NoBOM

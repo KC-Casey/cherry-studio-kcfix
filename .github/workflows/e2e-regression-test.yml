@@ -52,6 +52,7 @@ on:
           - code-cli-permissions
           - cherryin-chat
           - image-generation
+          - painting-workbench
           - agent-basic-task
           - claude-agent-runtime
           - pi-runtime

@@ -63,10 +63,10 @@ export const PaintingImageAddButton: FC = () => {
 
 /**
  * Top reference-image strip (via `ComposerSurface`'s `topContent`): a horizontally-scrolling
- * row of preview tiles (each removable, click to open the ImageViewer). Renders nothing until
+ * row of preview tiles (the selected parent is protected; click to open the ImageViewer). Renders nothing until
  * at least one image is attached. Reads the composer's `files` from context.
  */
-export const PaintingImageGallery: FC = () => {
+export const PaintingImageGallery: FC<{ protectedSourceId?: string }> = ({ protectedSourceId }) => {
   const { t } = useTranslation()
   const { files } = useComposerToolState()
   const { setFiles } = useComposerToolDispatch()
@@ -109,18 +109,20 @@ export const PaintingImageGallery: FC = () => {
               className="size-full cursor-pointer object-cover"
               preview={{ items: previewItems }}
             />
-            <button
-              type="button"
-              aria-label={t('common.delete')}
-              title={t('common.delete')}
-              onMouseDown={stop}
-              onClick={(event) => {
-                stop(event)
-                removeImage(item.id)
-              }}
-              className="absolute top-0.5 right-0.5 z-1 inline-flex size-4 items-center justify-center rounded-full bg-black/55 text-white opacity-0 transition-opacity group-focus-within/tile:opacity-100 group-hover/tile:opacity-100">
-              <X className="size-3" aria-hidden />
-            </button>
+            {item.id !== protectedSourceId && (
+              <button
+                type="button"
+                aria-label={t('common.delete')}
+                title={t('common.delete')}
+                onMouseDown={stop}
+                onClick={(event) => {
+                  stop(event)
+                  removeImage(item.id)
+                }}
+                className="absolute top-0.5 right-0.5 z-1 inline-flex size-4 items-center justify-center rounded-full bg-black/55 text-white opacity-0 transition-opacity group-focus-within/tile:opacity-100 group-hover/tile:opacity-100">
+                <X className="size-3" aria-hidden />
+              </button>
+            )}
           </span>
         ))}
       </HorizontalScrollContainer>

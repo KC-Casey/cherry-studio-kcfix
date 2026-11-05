@@ -249,5 +249,10 @@ export function usePaintingComposerInputFiles({
     }
   }, [setFiles, t])
 
-  return { materializeInputs }
+  const getSourceIdForEntry = useCallback(
+    (entryId: string) => [...entryCacheRef.current].find(([, entry]) => entry.id === entryId)?.[0],
+    []
+  )
+
+  return { materializeInputs, getSourceIdForEntry }
 }

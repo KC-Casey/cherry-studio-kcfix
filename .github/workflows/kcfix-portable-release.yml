@@ -1,5 +1,5 @@
 name: KC Fix Portable Prerelease
-run-name: KC Fix portable 2.1.11-kcfix.2 (${{ github.sha }})
+run-name: KC Fix portable 2.1.11-kcfix.3 (${{ github.sha }})
 
 on:
   push:
@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  RELEASE_VERSION: 2.1.11-kcfix.2
+  RELEASE_VERSION: 2.1.11-kcfix.3
 
 jobs:
   build:
@@ -48,7 +48,7 @@ jobs:
       - name: Inspect exact change scope and affected documentation
         shell: pwsh
         run: |
-          $base = 'd32b72b3d15c7803aca92176ee3198eae2516fb9'
+          $base = 'f369396b28931c1089d85c1a38c4012113f51356'
           pnpm change:scope --base $base
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           pnpm docs:affected --base $base
@@ -58,17 +58,7 @@ jobs:
       - name: Lint and check formatting of changed TypeScript files
         shell: pwsh
         run: |
-          $files = @(
-            'src/main/core/platform.ts',
-            'src/main/core/paths/portable.ts',
-            'src/main/core/preboot/userDataLocation.ts',
-            'src/main/core/preboot/__tests__/userDataLocation.test.ts',
-            'src/main/core/paths/__tests__/portable.test.ts',
-            'src/main/core/application/Application.ts',
-            'src/main/core/application/__tests__/Application.relaunch.test.ts',
-            'src/main/services/AppService.ts',
-            'src/main/services/__tests__/AppService.test.ts'
-          )
+          $files = @(git diff --name-only f369396b28931c1089d85c1a38c4012113f51356 HEAD -- '*.ts' '*.tsx' '*.js' '*.mjs' | Where-Object { Test-Path -LiteralPath $_ })
           pnpm exec oxlint --deny-warnings @files
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           pnpm exec eslint @files
@@ -81,16 +71,20 @@ jobs:
           }
       - name: Check documentation contracts
         run: pnpm docs:check
+      - name: Check translated UI labels
+        run: pnpm i18n:check
       - name: Typecheck application processes
         run: |
           pnpm run typecheck:node
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           pnpm run typecheck:web
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          pnpm exec tsc --noEmit -p tests/e2e/regression/tsconfig.workbench.json
       - name: Check image editing and data relocation contracts
         run: |
           pnpm rebuild:node
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          pnpm exec vitest run --maxWorkers=1 src/main/ai/utils/__tests__/normalizeImageEditInputs.test.ts src/main/data/db/__tests__/paintingReceiptMigration.test.ts src/main/data/services/__tests__/PaintingService.test.ts src/renderer/pages/paintings/model/__tests__/createPaintingBranch.test.ts src/shared/data/types/__tests__/paintingReceipt.test.ts src/renderer/pages/paintings/hooks/__tests__/usePaintingGenerationSubmit.test.ts src/renderer/pages/paintings/__tests__/PaintingPage.test.tsx src/main/services/userDataRelocation/__tests__/request.test.ts src/main/services/userDataRelocation/__tests__/validation.test.ts src/main/services/userDataRelocation/__tests__/execution.test.ts src/main/services/userDataRelocation/__tests__/skillExports.test.ts src/main/core/preboot/__tests__/userDataLocation.test.ts src/main/core/paths/__tests__/pathRegistry.test.ts src/main/core/paths/__tests__/portable.test.ts src/main/core/application/__tests__/Application.relaunch.test.ts src/main/services/__tests__/AppService.test.ts
+          pnpm exec vitest run --maxWorkers=1 src/main/ai/utils/__tests__/normalizeImageEditInputs.test.ts src/main/data/db/__tests__/paintingReceiptMigration.test.ts src/main/data/services/__tests__/PaintingService.test.ts src/renderer/pages/paintings/model/__tests__/createPaintingBranch.test.ts src/shared/data/types/__tests__/paintingReceipt.test.ts src/renderer/pages/paintings/hooks/__tests__/usePaintingGenerationSubmit.test.ts src/renderer/pages/paintings/__tests__/PaintingPage.test.tsx src/main/services/userDataRelocation/__tests__/request.test.ts src/main/services/userDataRelocation/__tests__/validation.test.ts src/main/services/userDataRelocation/__tests__/execution.test.ts src/main/services/userDataRelocation/__tests__/skillExports.test.ts src/main/core/preboot/__tests__/userDataLocation.test.ts src/main/core/paths/__tests__/pathRegistry.test.ts src/main/core/paths/__tests__/portable.test.ts src/main/core/application/__tests__/Application.relaunch.test.ts src/main/services/__tests__/AppService.test.ts src/renderer/pages/paintings/components/__tests__/PaintingComposerBranch.test.tsx src/renderer/pages/paintings/components/__tests__/PaintingRecord.test.tsx src/renderer/pages/paintings/components/__tests__/PaintingStrip.test.tsx src/renderer/pages/paintings/components/__tests__/PaintingComposer.test.tsx src/renderer/pages/paintings/components/__tests__/PaintingImageGallery.test.tsx src/renderer/pages/paintings/hooks/__tests__/usePaintingComposerInputFiles.test.ts scripts/e2e/regression/__tests__/cases.test.ts
       - name: Build production bundles
         run: |
           pnpm exec electron-vite build
@@ -104,6 +98,21 @@ jobs:
       - name: Prepare and verify directory portable ZIP and checksums
         shell: pwsh
         run: ./scripts/packaging/directory-portable.ps1 -SourceDirectory dist/win-unpacked -OutputDirectory portable-release -Version $env:RELEASE_VERSION -Commit $env:GITHUB_SHA -RunId $env:GITHUB_RUN_ID
+      - name: Exercise delivered ZIP in isolated Windows Electron
+        timeout-minutes: 20
+        shell: pwsh
+        run: ./scripts/e2e/regression/runPackagedWorkbench.ps1 -ArtifactZip "portable-release/cherry-studio-kcfix-$env:RELEASE_VERSION-win-x64-portable.zip" -RunDirectory "$env:RUNNER_TEMP/workbench-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+      - name: Preserve workbench test evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: kcfix-workbench-evidence-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/workbench-${{ github.run_id }}-${{ github.run_attempt }}/report
+            ${{ runner.temp }}/workbench-${{ github.run_id }}-${{ github.run_attempt }}/evidence
+            ${{ runner.temp }}/workbench-${{ github.run_id }}-${{ github.run_attempt }}/logs
+          if-no-files-found: warn
+          retention-days: 14
       - uses: actions/upload-artifact@v6
         with:
           name: kcfix-portable-${{ github.sha }}
@@ -189,4 +198,3 @@ jobs:
             const { data: ref } = await github.rest.git.getRef({ owner, repo, ref: `tags/${tag}` });
             if (ref.object.sha !== context.sha || published.draft || !published.prerelease) throw new Error('Published release verification failed; inspect before retrying');
             await core.summary.addLink('Download portable prerelease', published.html_url).write();
-

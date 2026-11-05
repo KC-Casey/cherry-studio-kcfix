@@ -85,13 +85,14 @@ describe('regression execution plan', () => {
     ['notes', ['N-01', 'MP-11', 'MP-74', 'MP-75', 'MP-76', 'MP-77', 'MP-78', 'MP-79']],
     ['knowledge', ['K-01', 'MP-59', 'MP-60', 'MP-61', 'MP-62', 'MP-63', 'MP-64', 'MP-65', 'MP-66', 'MP-67']],
     ['code-tools', ['CODE-01', 'CODE-02', 'CODE-03', 'MP-97']],
-    ['paintings', ['P-01', 'MP-90', 'MP-91', 'MP-92']],
+    ['paintings', ['P-01', 'P-02', 'MP-90', 'MP-91', 'MP-92']],
     ['translation', ['T-01', 'T-02', 'MP-81', 'MP-82', 'MP-83', 'MP-85', 'MP-86']]
   ] as const)('includes existing scenarios as well as case-library scenarios in %s', (task, ids) => {
     expect(selectCases(task).map(({ id }) => id)).toEqual(ids)
   })
 
   it.each([
+    ['painting-workbench', ['P-02']],
     ['notes-smoke', ['N-01']],
     ['knowledge-smoke', ['K-01']],
     ['mini-app-pinning', ['MP-103']],

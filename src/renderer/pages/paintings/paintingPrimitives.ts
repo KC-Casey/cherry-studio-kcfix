@@ -17,7 +17,7 @@ export const paintingClasses = {
   promptDockToggle:
     'inline-flex h-8 items-center gap-1.5 rounded-full border border-border-subtle bg-background/90 px-3 text-xs text-muted-foreground shadow-sm backdrop-blur-xl hover:bg-secondary-hover hover:text-foreground',
   historyStrip:
-    'flex h-full w-[68px] shrink-0 flex-col gap-2 overflow-y-auto border-border-subtle border-r px-2 py-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden',
+    'flex h-full w-44 shrink-0 flex-col gap-2 overflow-auto border-border-subtle border-r px-2 py-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden',
   historyAddButton:
     'sticky top-0 z-10 mb-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] border border-dashed border-border-subtle bg-background text-muted-foreground hover:bg-secondary-hover hover:text-foreground',
   historyItem:
