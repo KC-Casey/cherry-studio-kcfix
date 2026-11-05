@@ -22,7 +22,10 @@ export function getNormalizedExecutablePath(): string {
     return path.join(path.dirname(process.env.APPIMAGE), 'cherry-studio.appimage')
   }
   if (isWin && isPortable) {
-    return path.join(process.env.PORTABLE_EXECUTABLE_DIR || path.dirname(app.getPath('exe')), 'cherry-studio-portable.exe')
+    return path.join(
+      process.env.PORTABLE_EXECUTABLE_DIR || path.dirname(app.getPath('exe')),
+      'cherry-studio-portable.exe'
+    )
   }
   return app.getPath('exe')
 }
