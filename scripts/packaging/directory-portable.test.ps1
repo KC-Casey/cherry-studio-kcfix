@@ -5,9 +5,10 @@ $workspace = Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString())
 New-Item -ItemType Directory -Path $workspace | Out-Null
 try {
   $source = Join-Path $workspace 'win-unpacked'
+  # Match Electron 45: no standalone ANGLE DLLs are shipped or required.
   $files = @(
     'cherry-studio-kcfix.exe', 'resources/app.asar', 'icudtl.dat', 'resources.pak',
-    'libEGL.dll', 'libGLESv2.dll', 'ffmpeg.dll', 'locales/en-US.pak', 'locales/zh-CN.pak',
+    'ffmpeg.dll', 'locales/en-US.pak', 'locales/zh-CN.pak',
     'resources/computer-use/open-computer-use.exe',
     'resources/app.asar.unpacked/node_modules/@aiany/sqlite-vec-windows-x64/vec0.dll',
     'resources/app.asar.unpacked/node_modules/better-sqlite3/build/Release/better_sqlite3.node',

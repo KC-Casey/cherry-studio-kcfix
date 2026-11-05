@@ -11,9 +11,11 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 $source = (Resolve-Path -LiteralPath $SourceDirectory).Path
 $name = "cherry-studio-kcfix-$Version-win-x64-portable"
+# Electron 45 statically links ANGLE and deliberately omits libEGL/libGLESv2.
+# See electron/electron v45.2.2 build/zip.py; do not require those unused stubs.
 $required = @(
   'cherry-studio-kcfix.exe', 'resources/app.asar', 'icudtl.dat', 'resources.pak',
-  'libEGL.dll', 'libGLESv2.dll', 'ffmpeg.dll', 'locales/en-US.pak', 'locales/zh-CN.pak',
+  'ffmpeg.dll', 'locales/en-US.pak', 'locales/zh-CN.pak',
   'resources/computer-use/open-computer-use.exe',
   'resources/app.asar.unpacked/node_modules/@aiany/sqlite-vec-windows-x64/vec0.dll'
 )
