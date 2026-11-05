@@ -1,6 +1,7 @@
 import type { Page, TestInfo } from '@playwright/test'
 import { expect } from '@playwright/test'
 
+import enUS from '@renderer/i18n/locales/en-us.json'
 import { PaintingSchema, type Painting } from '@shared/data/types/painting'
 
 import { startWorkbenchImageServer } from '../fixtures/workbenchImageServer'
@@ -15,6 +16,7 @@ export async function paintingWorkbench(app: RegressionApp, mainWindow: Page, te
   const providerId = `workbench-${Date.now()}`
   const modelId = 'gpt-image-1'
   const original = 'A red square on a white background'
+  const outputLabel = (id: string) => enUS['paintings.workbench.output_label'].replace('{{id}}', id)
   let page = mainWindow
   const saved: Painting[] = []
   testInfo.annotations.push({
@@ -181,9 +183,9 @@ export async function paintingWorkbench(app: RegressionApp, mainWindow: Page, te
     expect(server.requests[2]).toMatchObject({ path: '/v1/images/edits', prompt: continuousInstruction })
     expect(server.requests[2].images).toEqual([server.images[1]])
     await expect(view().getByRole('img', { name: 'Before', exact: true })).toHaveAttribute('src', secondUrl!)
-    await expect(view().getByRole('list', { name: 'Image lineage', exact: true })).toBeVisible()
+    await expect(view().getByRole('list', { name: enUS['paintings.workbench.lineage'], exact: true })).toBeVisible()
     await view()
-      .getByRole('button', { name: `Image ${first.files.output[0]}`, exact: true })
+      .getByRole('button', { name: outputLabel(first.files.output[0]), exact: true })
       .click()
     await expect(view().getByTestId('artboard-image-transform')).toHaveAttribute('src', firstUrl!)
     const branchInstruction = 'Change the square to blue'
@@ -210,10 +212,9 @@ export async function paintingWorkbench(app: RegressionApp, mainWindow: Page, te
     await expect(
       view().getByRole('region', { name: 'Source image and references', exact: true }).getByRole('img')
     ).toHaveAttribute('src', branchUrl!)
-    await expect(view().getByRole('button', { name: `Image ${branch.files.output[0]}`, exact: true })).toHaveAttribute(
-      'aria-pressed',
-      'true'
-    )
+    await expect(
+      view().getByRole('button', { name: outputLabel(branch.files.output[0]), exact: true })
+    ).toHaveAttribute('aria-pressed', 'true')
     page = await app.restart('authenticated')
     await selectSidebarApp(page, 'Paintings')
     const persisted = await readPaintings()
@@ -225,7 +226,7 @@ export async function paintingWorkbench(app: RegressionApp, mainWindow: Page, te
       })
     }
     await view()
-      .getByRole('button', { name: `Image ${branch.files.output[0]}`, exact: true })
+      .getByRole('button', { name: outputLabel(branch.files.output[0]), exact: true })
       .click()
     await expect(view().getByRole('img', { name: 'Before', exact: true })).toHaveAttribute('src', firstUrl!)
     await expect(view().getByTestId('artboard-image-transform')).toHaveAttribute('src', branchUrl!)
